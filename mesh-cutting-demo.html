@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>동적 메쉬 커팅 시스템</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 30px;
+            max-width: 1200px;
+            width: 100%;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .instructions {
+            background: #f0f4ff;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border-left: 4px solid #667eea;
+        }
+
+        .instructions h3 {
+            color: #667eea;
+            margin-bottom: 8px;
+        }
+
+        .instructions ol {
+            margin-left: 20px;
+            color: #555;
+        }
+
+        .canvas-container {
+            position: relative;
+            border: 3px solid #667eea;
+            border-radius: 10px;
+            overflow: hidden;
+            background: #f9f9f9;
+            margin-bottom: 20px;
+        }
+
+        #canvas {
+            display: block;
+            cursor: crosshair;
+            background: white;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .btn-reset {
+            background: #ff6b6b;
+            color: white;
+        }
+
+        .btn-reset:hover {
+            background: #ee5a52;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+        }
+
+        .btn-load {
+            background: #51cf66;
+            color: white;
+        }
+
+        .btn-load:hover {
+            background: #40c057;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+        }
+
+        .btn-wireframe {
+            background: #4dabf7;
+            color: white;
+        }
+
+        .btn-wireframe:hover {
+            background: #339af0;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+        }
+
+        .btn-wireframe.active {
+            background: #1c7ed6;
+            box-shadow: inset 0 3px 5px rgba(0,0,0,0.2);
+        }
+
+        .info {
+            text-align: center;
+            margin-top: 15px;
+            padding: 10px;
+            background: #e9ecef;
+            border-radius: 8px;
+            color: #495057;
+            font-size: 14px;
+        }
+
+        .info.drawing {
+            background: #fff3bf;
+            color: #856404;
+        }
+
+        .shape-selector {
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .shape-selector label {
+            margin-right: 10px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .shape-selector select {
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: 2px solid #667eea;
+            font-size: 14px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔪 동적 메쉬 커팅 시스템</h1>
+        
+        <div class="instructions">
+            <h3>사용 방법:</h3>
+            <ol>
+                <li>캔버스에서 마우스를 드래그하여 절단선을 그으세요</li>
+                <li>시작점과 끝점을 잇는 직선을 기준으로 메쉬가 분할됩니다</li>
+                <li>분할된 메쉬는 각각 다른 색상으로 표시되며 물리 효과가 적용됩니다</li>
+                <li>조각들은 갈색 바닥선에 멈추게 됩니다</li>
+                <li>"초기화" 버튼으로 다시 시작할 수 있습니다</li>
+            </ol>
+            <p style="margin-top: 10px; font-size: 12px; color: #666;">
+                💡 <strong>참고:</strong> 나뭇잎은 SVG의 Quadratic Bezier 곡선(Q 명령어)을 
+                실시간으로 직선 세그먼트로 변환하여 절단 가능하게 만들었습니다.
+            </p>
+        </div>
+
+        <div class="shape-selector">
+            <label for="shapeSelect">테스트 도형 선택:</label>
+            <select id="shapeSelect">
+                <option value="leaf">🍃 나뭇잎 (SVG Layer0_0_FILL)</option>
+                <option value="triangle">🔺 삼각형</option>
+                <option value="square">🟦 사각형</option>
+                <option value="pentagon">⬟ 오각형</option>
+                <option value="circle">⭕ 원</option>
+            </select>
+        </div>
+
+        <div class="canvas-container">
+            <canvas id="canvas" width="1140" height="600"></canvas>
+        </div>
+
+        <div class="controls">
+            <button class="btn-reset" onclick="resetScene()">🔄 초기화</button>
+            <button class="btn-load" onclick="loadSelectedShape()">📥 도형 불러오기</button>
+            <button class="btn-wireframe" onclick="toggleWireframe()">🔍 와이어프레임</button>
+        </div>
+
+        <div id="info" class="info">드래그하여 메쉬를 절단하세요</div>
+    </div>
+
+    <script src="mesh-cutting.js"></script>
+</body>
+</html>
+

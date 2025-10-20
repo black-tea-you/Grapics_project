@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>동적 메쉬 커팅 시스템 - Three.js + Cannon.js</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+            overflow: hidden;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 30px;
+            max-width: 1400px;
+            width: 100%;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .tech-badge {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+
+        .badge {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .instructions {
+            background: #f0f4ff;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border-left: 4px solid #667eea;
+        }
+
+        .instructions h3 {
+            color: #667eea;
+            margin-bottom: 8px;
+        }
+
+        .instructions ol {
+            margin-left: 20px;
+            color: #555;
+        }
+
+        .canvas-container {
+            position: relative;
+            border: 3px solid #667eea;
+            border-radius: 10px;
+            overflow: hidden;
+            background: #000;
+            margin-bottom: 20px;
+            height: 600px;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        button {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .btn-reset {
+            background: #ff6b6b;
+            color: white;
+        }
+
+        .btn-reset:hover {
+            background: #ee5a52;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+        }
+
+        .btn-load {
+            background: #51cf66;
+            color: white;
+        }
+
+        .btn-load:hover {
+            background: #40c057;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+        }
+
+        .btn-wireframe {
+            background: #4dabf7;
+            color: white;
+        }
+
+        .btn-wireframe:hover {
+            background: #339af0;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+        }
+
+        .btn-wireframe.active {
+            background: #1c7ed6;
+            box-shadow: inset 0 3px 5px rgba(0,0,0,0.2);
+        }
+
+        .btn-camera {
+            background: #845ef7;
+            color: white;
+        }
+
+        .btn-camera:hover {
+            background: #7048e8;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+        }
+
+        .shape-selector {
+            margin-bottom: 15px;
+        }
+
+        .shape-selector label {
+            margin-right: 10px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .shape-selector select {
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: 2px solid #667eea;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        .info {
+            text-align: center;
+            margin-top: 15px;
+            padding: 10px;
+            background: #e9ecef;
+            border-radius: 8px;
+            color: #495057;
+            font-size: 14px;
+        }
+
+        .info.drawing {
+            background: #fff3bf;
+            color: #856404;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea20 0%, #764ba220 100%);
+            padding: 12px;
+            border-radius: 8px;
+            border: 2px solid #667eea40;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 4px;
+        }
+
+        .stat-value {
+            font-size: 20px;
+            font-weight: 700;
+            color: #333;
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 18px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔪 동적 메쉬 커팅 시스템 (WebGL Edition)</h1>
+        
+        <div class="tech-badge">
+            <span class="badge">WebGL</span>
+            <span class="badge">Three.js r150+</span>
+            <span class="badge">Cannon-ES</span>
+            <span class="badge">GPU Accelerated</span>
+        </div>
+
+        <div class="instructions">
+            <h3>사용 방법:</h3>
+            <ol>
+                <li>캔버스에서 마우스를 드래그하여 절단선을 그으세요</li>
+                <li>시작점과 끝점을 잇는 직선을 기준으로 메쉬가 분할됩니다</li>
+                <li>분할된 메쉬는 3D 공간에서 물리 시뮬레이션됩니다</li>
+                <li>마우스 우클릭 드래그로 카메라 회전 가능</li>
+                <li>마우스 휠로 줌 인/아웃</li>
+            </ol>
+            <p style="margin-top: 10px; font-size: 12px; color: #666;">
+                💡 <strong>WebGL 버전:</strong> GPU 가속으로 수천 개의 정점도 부드럽게 처리됩니다.
+                Cannon.js로 정확한 물리 시뮬레이션을 제공합니다.
+            </p>
+        </div>
+
+        <div class="shape-selector">
+            <label for="shapeSelect">테스트 도형 선택:</label>
+            <select id="shapeSelect">
+                <option value="leaf">🍃 나뭇잎 (SVG)</option>
+                <option value="triangle">🔺 삼각형</option>
+                <option value="square">🟦 사각형</option>
+                <option value="pentagon">⬟ 오각형</option>
+                <option value="circle">⭕ 원</option>
+            </select>
+        </div>
+
+        <div class="canvas-container">
+            <canvas id="canvas"></canvas>
+            <div id="loading" class="loading">
+                <div style="font-size: 24px; margin-bottom: 10px;">⚡ 로딩 중...</div>
+                <div id="loadingProgress" style="font-size: 14px;">라이브러리 다운로드 중...</div>
+                <div style="margin-top: 10px;">
+                    <div style="width: 200px; height: 4px; background: rgba(255,255,255,0.2); border-radius: 2px; overflow: hidden;">
+                        <div id="progressBar" style="width: 0%; height: 100%; background: #667eea; transition: width 0.3s;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button class="btn-reset" onclick="resetScene()">🔄 초기화</button>
+            <button class="btn-load" onclick="loadSelectedShape()">📥 도형 불러오기</button>
+            <button class="btn-wireframe" onclick="toggleWireframe()">🔍 와이어프레임</button>
+            <button class="btn-camera" onclick="resetCamera()">📷 카메라 리셋</button>
+        </div>
+
+        <div id="info" class="info">드래그하여 메쉬를 절단하세요 (WebGL 모드)</div>
+
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-label">메쉬 조각</div>
+                <div class="stat-value" id="meshCount">1</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">총 정점</div>
+                <div class="stat-value" id="vertexCount">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">FPS</div>
+                <div class="stat-value" id="fpsCount">60</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">렌더 콜</div>
+                <div class="stat-value" id="drawCalls">1</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 프로그레스 업데이트 -->
+    <script>
+        let loadedScripts = 0;
+        const totalScripts = 3;
+        
+        function updateProgress(message) {
+            loadedScripts++;
+            const progress = (loadedScripts / totalScripts) * 100;
+            const progressBar = document.getElementById('progressBar');
+            const progressText = document.getElementById('loadingProgress');
+            if (progressBar) progressBar.style.width = progress + '%';
+            if (progressText) progressText.textContent = message;
+        }
+        
+        // 시작 시간 측정
+        const loadStartTime = performance.now();
+    </script>
+
+    <!-- Three.js 라이브러리 (unpkg CDN - 더 빠름) -->
+    <script src="https://unpkg.com/three@0.150.0/build/three.min.js" onload="updateProgress('Three.js 로드 완료 ✓')"></script>
+    
+    <!-- Cannon.js 물리 엔진 -->
+    <script src="https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.min.js" onload="updateProgress('Cannon.js 로드 완료 ✓')"></script>
+    
+    <!-- OrbitControls -->
+    <script src="https://unpkg.com/three@0.150.0/examples/jsm/controls/OrbitControls.js" type="module">
+        // OrbitControls는 module로 로드
+    </script>
+    <script src="https://unpkg.com/three@0.150.0/examples/js/controls/OrbitControls.js" onload="updateProgress('OrbitControls 로드 완료 ✓')"></script>
+    
+    <!-- 메인 스크립트 -->
+    <script>
+        // 모든 스크립트 로드 완료 후 실행
+        window.addEventListener('load', () => {
+            const loadTime = ((performance.now() - loadStartTime) / 1000).toFixed(2);
+            console.log(`✅ 모든 리소스 로드 완료: ${loadTime}초`);
+        });
+    </script>
+    <script src="mesh-cutting-threejs.js"></script>
+</body>
+</html>
+

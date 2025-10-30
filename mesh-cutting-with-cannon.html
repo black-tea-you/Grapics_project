@@ -16,10 +16,11 @@
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             display: flex;
             justify-content: center;
-            align-items: center;
+            align-items: flex-start;
             min-height: 100vh;
             padding: 20px;
-            overflow: hidden;
+            overflow-y: auto;
+            overflow-x: hidden;
         }
 
         .container {
@@ -29,6 +30,7 @@
             padding: 30px;
             max-width: 1400px;
             width: 100%;
+            margin: 20px auto;
         }
 
         h1 {
@@ -55,16 +57,20 @@
             font-weight: 600;
         }
 
+        .badge.cannon {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
+        }
+
         .instructions {
-            background: #f0f4ff;
+            background: #fff4e6;
             padding: 15px;
             border-radius: 10px;
             margin-bottom: 20px;
-            border-left: 4px solid #667eea;
+            border-left: 4px solid #ff6b6b;
         }
 
         .instructions h3 {
-            color: #667eea;
+            color: #ff6b6b;
             margin-bottom: 8px;
         }
 
@@ -73,14 +79,32 @@
             color: #555;
         }
 
+        .comparison {
+            background: #e7f5ff;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border-left: 4px solid #339af0;
+        }
+
+        .comparison h3 {
+            color: #339af0;
+            margin-bottom: 8px;
+        }
+
+        .comparison ul {
+            margin-left: 20px;
+            color: #555;
+        }
+
         .canvas-container {
             position: relative;
-            border: 3px solid #667eea;
+            border: 3px solid #ff6b6b;
             border-radius: 10px;
             overflow: hidden;
             background: #000;
             margin-bottom: 20px;
-            height: 600px;
+            height: 700px;
         }
 
         #canvas {
@@ -157,6 +181,17 @@
             box-shadow: 0 6px 12px rgba(0,0,0,0.15);
         }
 
+        .btn-clear {
+            background: #fa5252;
+            color: white;
+        }
+
+        .btn-clear:hover {
+            background: #e03131;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+        }
+
         .shape-selector {
             margin-bottom: 15px;
         }
@@ -170,7 +205,7 @@
         .shape-selector select {
             padding: 8px 16px;
             border-radius: 6px;
-            border: 2px solid #667eea;
+            border: 2px solid #ff6b6b;
             font-size: 14px;
             cursor: pointer;
         }
@@ -198,10 +233,10 @@
         }
 
         .stat-card {
-            background: linear-gradient(135deg, #667eea20 0%, #764ba220 100%);
+            background: linear-gradient(135deg, #ff6b6b20 0%, #ee5a6f20 100%);
             padding: 12px;
             border-radius: 8px;
-            border: 2px solid #667eea40;
+            border: 2px solid #ff6b6b40;
         }
 
         .stat-label {
@@ -229,27 +264,39 @@
 </head>
 <body>
     <div class="container">
-        <h1>🔪 동적 메쉬 커팅 시스템 (WebGL Edition)</h1>
+        <h1>🔪 동적 메쉬 커팅 시스템 (With Cannon.js)</h1>
         
         <div class="tech-badge">
             <span class="badge">WebGL</span>
             <span class="badge">Three.js r150+</span>
-            <span class="badge">Cannon-ES</span>
-            <span class="badge">GPU Accelerated</span>
+            <span class="badge cannon">🚀 Cannon.js 물리 엔진</span>
+            <span class="badge cannon">⚡ 프로페셔널</span>
+        </div>
+
+        <div class="comparison">
+            <h3>✨ Cannon.js의 장점:</h3>
+            <ul>
+                <li>🎯 <strong>더 정확한 물리 시뮬레이션</strong> - 전문 물리 엔진의 정확도</li>
+                <li>🤖 <strong>자동 충돌 감지</strong> - 복잡한 충돌 처리를 자동으로 수행</li>
+                <li>⚙️ <strong>다양한 물리 속성</strong> - 마찰, 반발, 감쇠를 쉽게 설정</li>
+                <li>📦 <strong>적은 코드량</strong> - 수백 줄의 물리 코드를 몇 줄로 대체</li>
+                <li>🔧 <strong>최적화된 성능</strong> - Broadphase 알고리즘으로 효율적인 충돌 감지</li>
+            </ul>
         </div>
 
         <div class="instructions">
-            <h3>사용 방법:</h3>
+            <h3>🎮 사용 방법 (2D 스타일 자유 절단!):</h3>
             <ol>
-                <li>캔버스에서 마우스를 드래그하여 절단선을 그으세요</li>
-                <li>시작점과 끝점을 잇는 직선을 기준으로 메쉬가 분할됩니다</li>
-                <li>분할된 메쉬는 3D 공간에서 물리 시뮬레이션됩니다</li>
-                <li>마우스 우클릭 드래그로 카메라 회전 가능</li>
-                <li>마우스 휠로 줌 인/아웃</li>
+                <li>✏️ <strong>캔버스 어디서든</strong> 마우스를 드래그하여 절단선을 그으세요</li>
+                <li>🎯 도형 외부에서도 시작 가능! (무한 드래그 지원)</li>
+                <li>📏 시작점과 끝점을 잇는 직선을 기준으로 메쉬가 분할됩니다</li>
+                <li>🌟 녹색(시작) → 빨간색(끝) 점으로 절단선 표시</li>
+                <li>💥 분할된 메쉬는 Cannon.js 물리 효과로 자연스럽게 날아갑니다</li>
+                <li>🔄 마우스 우클릭 드래그로 카메라 회전 | 휠로 줌</li>
             </ol>
             <p style="margin-top: 10px; font-size: 12px; color: #666;">
-                💡 <strong>WebGL 버전:</strong> GPU 가속으로 수천 개의 정점도 부드럽게 처리됩니다.
-                Cannon.js로 정확한 물리 시뮬레이션을 제공합니다.
+                🚀 <strong>Cannon.js 물리 엔진:</strong> 정확한 중력, 충돌, 반발 계산!<br>
+                📐 <strong>2D 스타일 절단:</strong> 포토샵/일러스트처럼 자유롭게 선 긋기!
             </p>
         </div>
 
@@ -267,24 +314,20 @@
         <div class="canvas-container">
             <canvas id="canvas"></canvas>
             <div id="loading" class="loading">
-                <div style="font-size: 24px; margin-bottom: 10px;">⚡ 로딩 중...</div>
-                <div id="loadingProgress" style="font-size: 14px;">라이브러리 다운로드 중...</div>
-                <div style="margin-top: 10px;">
-                    <div style="width: 200px; height: 4px; background: rgba(255,255,255,0.2); border-radius: 2px; overflow: hidden;">
-                        <div id="progressBar" style="width: 0%; height: 100%; background: #667eea; transition: width 0.3s;"></div>
-                    </div>
-                </div>
+                <div style="font-size: 24px; margin-bottom: 10px;">🚀 로딩 중...</div>
+                <div id="loadingProgress" style="font-size: 14px;">Cannon.js + Three.js 로드 중...</div>
             </div>
         </div>
 
         <div class="controls">
-            <button class="btn-reset" onclick="resetScene()">🔄 초기화</button>
+            <button class="btn-reset" onclick="resetScene()">🔄 씬 초기화</button>
             <button class="btn-load" onclick="loadSelectedShape()">📥 도형 불러오기</button>
+            <button class="btn-clear" onclick="clearAllMeshes()">🗑️ 모든 도형 제거</button>
             <button class="btn-wireframe" onclick="toggleWireframe()">🔍 와이어프레임</button>
             <button class="btn-camera" onclick="resetCamera()">📷 카메라 리셋</button>
         </div>
 
-        <div id="info" class="info">드래그하여 메쉬를 절단하세요 (WebGL 모드)</div>
+        <div id="info" class="info">✏️ 캔버스 어디서든 드래그하여 메쉬를 절단하세요! (Cannon.js 물리 엔진)</div>
 
         <div class="stats">
             <div class="stat-card">
@@ -300,51 +343,44 @@
                 <div class="stat-value" id="fpsCount">60</div>
             </div>
             <div class="stat-card">
-                <div class="stat-label">렌더 콜</div>
-                <div class="stat-value" id="drawCalls">1</div>
+                <div class="stat-label">로딩 시간</div>
+                <div class="stat-value" id="loadTime">-</div>
             </div>
         </div>
     </div>
 
-    <!-- 프로그레스 업데이트 -->
+    <!-- 로딩 시간 측정 -->
     <script>
-        let loadedScripts = 0;
-        const totalScripts = 3;
-        
-        function updateProgress(message) {
-            loadedScripts++;
-            const progress = (loadedScripts / totalScripts) * 100;
-            const progressBar = document.getElementById('progressBar');
-            const progressText = document.getElementById('loadingProgress');
-            if (progressBar) progressBar.style.width = progress + '%';
-            if (progressText) progressText.textContent = message;
-        }
-        
-        // 시작 시간 측정
         const loadStartTime = performance.now();
+        console.log('🚀 Cannon.js + Three.js 버전 로딩 시작...');
     </script>
 
-    <!-- Three.js 라이브러리 (unpkg CDN - 더 빠름) -->
-    <script src="https://unpkg.com/three@0.150.0/build/three.min.js" onload="updateProgress('Three.js 로드 완료 ✓')"></script>
+    <!-- Three.js 라이브러리 (로컬) -->
+    <script src="./js/three.min.js" onerror="console.error('Three.js 로드 실패:', this.src)"></script>
     
-    <!-- Cannon.js 물리 엔진 -->
-    <script src="https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.min.js" onload="updateProgress('Cannon.js 로드 완료 ✓')"></script>
+    <!-- OrbitControls (로컬) -->
+    <script src="./js/orbitcontrols.js" onerror="console.error('OrbitControls 로드 실패:', this.src)"></script>
     
-    <!-- OrbitControls -->
-    <script src="https://unpkg.com/three@0.150.0/examples/jsm/controls/OrbitControls.js" type="module">
-        // OrbitControls는 module로 로드
-    </script>
-    <script src="https://unpkg.com/three@0.150.0/examples/js/controls/OrbitControls.js" onload="updateProgress('OrbitControls 로드 완료 ✓')"></script>
+    <!-- Cannon.js 물리 엔진 (로컬) -->
+    <script src="./js/cannon.js" onerror="console.error('Cannon.js 로드 실패:', this.src)"></script>
     
-    <!-- 메인 스크립트 -->
+    <!-- 로딩 완료 -->
     <script>
-        // 모든 스크립트 로드 완료 후 실행
-        window.addEventListener('load', () => {
-            const loadTime = ((performance.now() - loadStartTime) / 1000).toFixed(2);
-            console.log(`✅ 모든 리소스 로드 완료: ${loadTime}초`);
+        const loadEndTime = performance.now();
+        const loadTime = ((loadEndTime - loadStartTime) / 1000).toFixed(3);
+        console.log(`✅ 라이브러리 로드 완료: ${loadTime}초 (Cannon.js 포함)`);
+        
+        // 통계에 로딩 시간 표시
+        window.addEventListener('DOMContentLoaded', () => {
+            const loadTimeElement = document.getElementById('loadTime');
+            if (loadTimeElement) {
+                loadTimeElement.textContent = loadTime + 's';
+            }
         });
     </script>
-    <script src="mesh-cutting-threejs.js"></script>
+    
+    <!-- 메인 스크립트 (Cannon.js 버전) -->
+    <script src="mesh-cutting-with-cannon.js"></script>
 </body>
 </html>
 

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>동적 메쉬 커팅 시스템 - Three.js + Cannon.js (로컬)</title>
+    <title>동적 메쉬 커팅 시스템 - Three.js Only (Cannon.js 제거)</title>
     <style>
         * {
             margin: 0;
@@ -16,10 +16,11 @@
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             display: flex;
             justify-content: center;
-            align-items: center;
+            align-items: flex-start;
             min-height: 100vh;
             padding: 20px;
-            overflow: hidden;
+            overflow-y: auto;
+            overflow-x: hidden;
         }
 
         .container {
@@ -29,6 +30,7 @@
             padding: 30px;
             max-width: 1400px;
             width: 100%;
+            margin: 20px auto;
         }
 
         h1 {
@@ -55,7 +57,7 @@
             font-weight: 600;
         }
 
-        .badge.local {
+        .badge.no-cannon {
             background: linear-gradient(135deg, #51cf66 0%, #40c057 100%);
         }
 
@@ -84,7 +86,7 @@
             overflow: hidden;
             background: #000;
             margin-bottom: 20px;
-            height: 600px;
+            height: 700px;
         }
 
         #canvas {
@@ -161,6 +163,17 @@
             box-shadow: 0 6px 12px rgba(0,0,0,0.15);
         }
 
+        .btn-clear {
+            background: #fa5252;
+            color: white;
+        }
+
+        .btn-clear:hover {
+            background: #e03131;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+        }
+
         .shape-selector {
             margin-bottom: 15px;
         }
@@ -233,26 +246,28 @@
 </head>
 <body>
     <div class="container">
-        <h1>🔪 동적 메쉬 커팅 시스템 (WebGL Edition - 로컬)</h1>
+        <h1>🔪 동적 메쉬 커팅 시스템 (No Cannon.js)</h1>
         
         <div class="tech-badge">
             <span class="badge">WebGL</span>
             <span class="badge">Three.js r150+</span>
-            <span class="badge">Cannon-ES</span>
-            <span class="badge local">⚡ 로컬 버전</span>
+            <span class="badge no-cannon">⚡ 커스텀 물리 엔진</span>
+            <span class="badge no-cannon">✅ Cannon.js 제거</span>
         </div>
 
         <div class="instructions">
-            <h3>사용 방법:</h3>
+            <h3>✨ 사용 방법 (2D 스타일 자유 절단!):</h3>
             <ol>
-                <li>캔버스에서 마우스를 드래그하여 절단선을 그으세요</li>
-                <li>시작점과 끝점을 잇는 직선을 기준으로 메쉬가 분할됩니다</li>
-                <li>분할된 메쉬는 3D 공간에서 물리 시뮬레이션됩니다</li>
-                <li>마우스 우클릭 드래그로 카메라 회전 가능</li>
-                <li>마우스 휠로 줌 인/아웃</li>
+                <li>✏️ <strong>캔버스 어디서든</strong> 마우스를 드래그하여 절단선을 그으세요</li>
+                <li>🎯 도형 외부에서도 시작 가능! (무한 드래그 지원)</li>
+                <li>📏 시작점과 끝점을 잇는 직선을 기준으로 메쉬가 분할됩니다</li>
+                <li>🌟 녹색(시작) → 빨간색(끝) 점으로 절단선 표시</li>
+                <li>💥 분할된 메쉬는 물리 효과로 날아갑니다</li>
+                <li>🔄 마우스 우클릭 드래그로 카메라 회전 | 휠로 줌</li>
             </ol>
             <p style="margin-top: 10px; font-size: 12px; color: #666;">
-                ⚡ <strong>로컬 버전:</strong> 로컬 라이브러리를 사용하여 초고속 로딩! (0.1-0.3초)
+                ⚡ <strong>커스텀 물리 엔진:</strong> Cannon.js 없이 Three.js + MV.js로 직접 구현!<br>
+                📐 <strong>2D 스타일 절단:</strong> 포토샵/일러스트처럼 자유롭게 선 긋기!
             </p>
         </div>
 
@@ -276,13 +291,14 @@
         </div>
 
         <div class="controls">
-            <button class="btn-reset" onclick="resetScene()">🔄 초기화</button>
+            <button class="btn-reset" onclick="resetScene()">🔄 씬 초기화</button>
             <button class="btn-load" onclick="loadSelectedShape()">📥 도형 불러오기</button>
+            <button class="btn-clear" onclick="clearAllMeshes()">🗑️ 모든 도형 제거</button>
             <button class="btn-wireframe" onclick="toggleWireframe()">🔍 와이어프레임</button>
             <button class="btn-camera" onclick="resetCamera()">📷 카메라 리셋</button>
         </div>
 
-        <div id="info" class="info">드래그하여 메쉬를 절단하세요 (WebGL 로컬 모드)</div>
+        <div id="info" class="info">✏️ 캔버스 어디서든 드래그하여 메쉬를 절단하세요! (2D 자유 절단 모드)</div>
 
         <div class="stats">
             <div class="stat-card">
@@ -307,23 +323,23 @@
     <!-- 로딩 시간 측정 -->
     <script>
         const loadStartTime = performance.now();
-        console.log('⚡ 로컬 버전 로딩 시작...');
+        console.log('⚡ 커스텀 물리 엔진 버전 로딩 시작...');
     </script>
 
+    <!-- MV.js 라이브러리 (벡터/행렬 연산) -->
+    <script src="./libs/MV.js"></script>
+
     <!-- Three.js 라이브러리 (로컬) -->
-    <script src="./Grapics/js/three.min.js" onerror="console.error('Three.js 로드 실패:', this.src)"></script>
-    
-    <!-- Cannon.js 물리 엔진 (로컬) -->
-    <script src="./Grapics/js/cannon-es.min.js" onerror="console.error('Cannon.js 로드 실패:', this.src)"></script>
+    <script src="./js/three.min.js" onerror="console.error('Three.js 로드 실패:', this.src)"></script>
     
     <!-- OrbitControls (로컬) -->
-    <script src="./Grapics/js/orbitcontrols.js" onerror="console.error('OrbitControls 로드 실패:', this.src)"></script>
+    <script src="./js/orbitcontrols.js" onerror="console.error('OrbitControls 로드 실패:', this.src)"></script>
     
     <!-- 로딩 완료 -->
     <script>
         const loadEndTime = performance.now();
         const loadTime = ((loadEndTime - loadStartTime) / 1000).toFixed(3);
-        console.log(`✅ 라이브러리 로드 완료: ${loadTime}초`);
+        console.log(`✅ 라이브러리 로드 완료: ${loadTime}초 (Cannon.js 없음)`);
         
         // 통계에 로딩 시간 표시
         window.addEventListener('DOMContentLoaded', () => {
@@ -334,8 +350,8 @@
         });
     </script>
     
-    <!-- 메인 스크립트 -->
-    <script src="mesh-cutting-threejs.js"></script>
+    <!-- 메인 스크립트 (커스텀 물리 엔진) -->
+    <script src="mesh-cutting-no-cannon.js"></script>
 </body>
 </html>
 

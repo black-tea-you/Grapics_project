@@ -1,5 +1,6 @@
 // ==========================================
-// Three.js + Cannon.js 기반 메쉬 커팅 시스템
+// Three.js 기반 메쉬 커팅 시스템 (커스텀 물리 엔진)
+// Cannon.js 없이 직접 구현한 물리 시뮬레이션
 // ==========================================
 
 // DOM 요소
@@ -11,12 +12,15 @@ const loadingDiv = document.getElementById('loading');
 let scene, camera, renderer, controls;
 let raycaster, mouse;
 
-// Cannon.js 변수
-let world;
-let groundBody;
+// 커스텀 물리 엔진 설정
+const GRAVITY = -30; // 중력 가속도
+const GROUND_Y = -100; // 바닥 Y 좌표
+const RESTITUTION = 0.4; // 반발 계수
+const DAMPING = 0.98; // 감쇠 계수
+const ANGULAR_DAMPING = 0.95; // 각속도 감쇠
 
 // 상태 변수
-let meshes = []; // { threeMesh, cannonBody, userData }
+let meshes = []; // { threeMesh, physicsData, userData }
 let isDrawing = false;
 let startPoint = null;
 let endPoint = null;
@@ -31,11 +35,138 @@ let lastTime = performance.now();
 let frameCount = 0;
 
 // ==========================================
+// 커스텀 물리 엔진 클래스
+// ==========================================
+
+class PhysicsBody {
+    constructor(mesh) {
+        this.mesh = mesh;
+        
+        // 위치 및 회전
+        this.position = mesh.position.clone();
+        this.rotation = mesh.rotation.clone();
+        
+        // 선형 운동
+        this.velocity = new THREE.Vector3(0, 0, 0);
+        this.acceleration = new THREE.Vector3(0, GRAVITY, 0);
+        
+        // 각운동
+        this.angularVelocity = new THREE.Vector3(0, 0, 0);
+        this.angularAcceleration = new THREE.Vector3(0, 0, 0);
+        
+        // 물리 속성
+        this.mass = 1;
+        this.restitution = RESTITUTION;
+        this.damping = DAMPING;
+        this.angularDamping = ANGULAR_DAMPING;
+        
+        // 바운딩 박스
+        this.updateBoundingBox();
+    }
+    
+    updateBoundingBox() {
+        if (!this.mesh.geometry.boundingBox) {
+            this.mesh.geometry.computeBoundingBox();
+        }
+        this.boundingBox = this.mesh.geometry.boundingBox.clone();
+    }
+    
+    applyForce(force, point) {
+        // F = ma => a = F/m
+        const acceleration = force.clone().divideScalar(this.mass);
+        this.acceleration.add(acceleration);
+        
+        // 토크 계산 (회전력)
+        if (point) {
+            const torque = point.clone().cross(force);
+            const angularAccel = torque.divideScalar(this.mass * 10); // 관성 모멘트 간소화
+            this.angularAcceleration.add(angularAccel);
+        }
+    }
+    
+    applyImpulse(impulse, point) {
+        // 충격량: 즉각적인 속도 변화
+        const deltaV = impulse.clone().divideScalar(this.mass);
+        this.velocity.add(deltaV);
+        
+        // 각운동량 변화
+        if (point) {
+            const angularImpulse = point.clone().cross(impulse);
+            const deltaAngularV = angularImpulse.divideScalar(this.mass * 10);
+            this.angularVelocity.add(deltaAngularV);
+        }
+    }
+    
+    update(deltaTime) {
+        // 속도 업데이트 (v = v0 + a*dt)
+        this.velocity.add(
+            this.acceleration.clone().multiplyScalar(deltaTime)
+        );
+        
+        // 위치 업데이트 (p = p0 + v*dt)
+        this.position.add(
+            this.velocity.clone().multiplyScalar(deltaTime)
+        );
+        
+        // 각속도 업데이트
+        this.angularVelocity.add(
+            this.angularAcceleration.clone().multiplyScalar(deltaTime)
+        );
+        
+        // 회전 업데이트 (오일러 각도)
+        this.rotation.x += this.angularVelocity.x * deltaTime;
+        this.rotation.y += this.angularVelocity.y * deltaTime;
+        this.rotation.z += this.angularVelocity.z * deltaTime;
+        
+        // 감쇠 적용
+        this.velocity.multiplyScalar(this.damping);
+        this.angularVelocity.multiplyScalar(this.angularDamping);
+        
+        // 가속도 초기화 (매 프레임 새로 계산)
+        this.acceleration.set(0, GRAVITY, 0);
+        this.angularAcceleration.set(0, 0, 0);
+        
+        // 메쉬 위치 동기화
+        this.mesh.position.copy(this.position);
+        this.mesh.rotation.copy(this.rotation);
+        
+        // 충돌 감지 및 처리
+        this.checkCollisions();
+    }
+    
+    checkCollisions() {
+        // 바닥과의 충돌
+        const minY = this.position.y + this.boundingBox.min.y;
+        
+        if (minY < GROUND_Y) {
+            // 위치 보정
+            this.position.y = GROUND_Y - this.boundingBox.min.y;
+            this.mesh.position.y = this.position.y;
+            
+            // 속도 반전 (반발)
+            if (this.velocity.y < 0) {
+                this.velocity.y = -this.velocity.y * this.restitution;
+                
+                // 매우 작은 속도는 0으로 (바닥에 정지)
+                if (Math.abs(this.velocity.y) < 0.5) {
+                    this.velocity.y = 0;
+                    this.velocity.x *= 0.9; // 마찰
+                    this.velocity.z *= 0.9;
+                }
+            }
+            
+            // 각속도 감쇠 (바닥 충돌 시)
+            this.angularVelocity.multiplyScalar(0.8);
+        }
+    }
+}
+
+// ==========================================
 // 초기화
 // ==========================================
 
 function init() {
-    console.log('🚀 Three.js 초기화 시작...');
+    console.log('🚀 Three.js 초기화 시작... (커스텀 물리 엔진)');
     const initStartTime = performance.now();
     
     // Scene 생성
@@ -66,6 +197,7 @@ function init() {
     controls.dampingFactor = 0.05;
     controls.minDistance = 50;
     controls.maxDistance = 500;
+    controls.enablePan = false; // Pan 기능 비활성화 (앞뒤 이동 제거)
     controls.mouseButtons = {
         LEFT: null, // 왼쪽 클릭은 절단용으로 사용
         MIDDLE: THREE.MOUSE.DOLLY,
@@ -78,9 +210,6 @@ function init() {
     
     // 조명 설정
     setupLights();
-    
-    // Cannon.js World 설정
-    setupPhysics();
     
     // 바닥 생성
     createGround();
@@ -96,7 +225,7 @@ function init() {
     
     // 로딩 완료
     const initTime = ((performance.now() - initStartTime) / 1000).toFixed(2);
-    console.log(`✅ Three.js 초기화 완료: ${initTime}초`);
+    console.log(`✅ Three.js 초기화 완료: ${initTime}초 (커스텀 물리 엔진)`);
     
     // 로딩 인디케이터 페이드아웃
     setTimeout(() => {
@@ -137,24 +266,10 @@ function setupLights() {
 }
 
 // ==========================================
-// 물리 엔진 설정
-// ==========================================
-
-function setupPhysics() {
-    world = new CANNON.World();
-    world.gravity.set(0, -30, 0); // 중력
-    world.broadphase = new CANNON.NaiveBroadphase();
-    world.solver.iterations = 10;
-    world.defaultContactMaterial.restitution = 0.3; // 반발 계수
-}
-
-// ==========================================
 // 바닥 생성
 // ==========================================
 
 function createGround() {
-    const groundY = -100;
-    
     // Three.js 바닥
     const groundGeometry = new THREE.PlaneGeometry(400, 400);
     const groundMaterial = new THREE.MeshStandardMaterial({ 
@@ -164,23 +279,13 @@ function createGround() {
     });
     const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
     groundMesh.rotation.x = -Math.PI / 2;
-    groundMesh.position.y = groundY;
+    groundMesh.position.y = GROUND_Y;
     groundMesh.receiveShadow = true;
     scene.add(groundMesh);
     
-    // Cannon.js 바닥
-    const groundShape = new CANNON.Plane();
-    groundBody = new CANNON.Body({ 
-        mass: 0, // 정적 객체
-        shape: groundShape
-    });
-    groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
-    groundBody.position.y = groundY;
-    world.addBody(groundBody);
-    
     // 그리드 헬퍼
     const gridHelper = new THREE.GridHelper(400, 40, 0x667eea, 0x444444);
-    gridHelper.position.y = groundY + 0.1;
+    gridHelper.position.y = GROUND_Y + 0.1;
     scene.add(gridHelper);
 }
 
@@ -327,7 +432,7 @@ function createCircleShape() {
 }
 
 // ==========================================
-// 메쉬 생성
+// 메쉬 생성 (커스텀 물리 적용)
 // ==========================================
 
 function createMeshFromShape(shapeData, position = { x: 0, y: 0, z: 0 }) {
@@ -342,7 +447,8 @@ function createMeshFromShape(shapeData, position = { x: 0, y: 0, z: 0 }) {
         color: color,
         side: THREE.DoubleSide,
         roughness: 0.7,
-        metalness: 0.1
+        metalness: 0.1,
+        wireframe: wireframeMode // 현재 와이어프레임 모드 적용
     });
     
     // Mesh 생성
@@ -352,51 +458,17 @@ function createMeshFromShape(shapeData, position = { x: 0, y: 0, z: 0 }) {
     mesh.receiveShadow = true;
     scene.add(mesh);
     
-    // 물리 바디 생성
-    const vertices = [];
-    const positionAttribute = geometry.attributes.position;
-    for (let i = 0; i < positionAttribute.count; i++) {
-        vertices.push(new CANNON.Vec3(
-            positionAttribute.getX(i),
-            positionAttribute.getY(i),
-            0
-        ));
-    }
-    
-    // ConvexPolyhedron으로 근사
-    const faces = [];
-    for (let i = 0; i < positionAttribute.count; i += 3) {
-        faces.push([i, i + 1, i + 2]);
-    }
-    
-    let cannonShape;
-    try {
-        cannonShape = new CANNON.ConvexPolyhedron({ vertices, faces });
-    } catch (e) {
-        // 복잡한 형태는 Box로 근사
-        const box = geometry.boundingBox;
-        const sizeX = (box.max.x - box.min.x) / 2;
-        const sizeY = (box.max.y - box.min.y) / 2;
-        cannonShape = new CANNON.Box(new CANNON.Vec3(sizeX, sizeY, 1));
-    }
-    
-    const body = new CANNON.Body({
-        mass: 1,
-        shape: cannonShape,
-        position: new CANNON.Vec3(position.x, position.y, position.z),
-        linearDamping: 0.3,
-        angularDamping: 0.3
-    });
-    world.addBody(body);
+    // 커스텀 물리 바디 생성
+    const physicsBody = new PhysicsBody(mesh);
     
     // 메쉬 정보 저장
     const meshData = {
         threeMesh: mesh,
-        cannonBody: body,
+        physicsBody: physicsBody,
         originalColor: color,
         userData: {
-            vertices: vertices.length,
-            triangles: positionAttribute.count / 3
+            vertices: geometry.attributes.position.count,
+            triangles: geometry.attributes.position.count / 3
         }
     };
     
@@ -411,10 +483,12 @@ function createMeshFromShape(shapeData, position = { x: 0, y: 0, z: 0 }) {
 // ==========================================
 
 function setupEventListeners() {
-    // 마우스 다운
+    // 마우스 다운 (캔버스에서만)
     canvas.addEventListener('mousedown', onMouseDown);
-    canvas.addEventListener('mousemove', onMouseMove);
-    canvas.addEventListener('mouseup', onMouseUp);
+    
+    // 마우스 이동 및 업 (document 레벨 - 무한 드래그)
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
     
     // 윈도우 리사이즈
     window.addEventListener('resize', onWindowResize);
@@ -431,17 +505,24 @@ function onMouseDown(event) {
     mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     
-    // Raycasting
+    // Raycasting - Z=0 평면과의 교차점 사용 (외부에서도 시작 가능!)
     raycaster.setFromCamera(mouse, camera);
-    const intersects = raycaster.intersectObjects(scene.children, true);
     
-    if (intersects.length > 0) {
-        const point = intersects[0].point;
-        startPoint = point.clone();
+    // Z=0 평면 생성
+    const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+    const intersectionPoint = new THREE.Vector3();
+    
+    // Ray와 평면의 교차점 계산
+    const hasIntersection = raycaster.ray.intersectPlane(plane, intersectionPoint);
+    
+    if (hasIntersection) {
+        startPoint = intersectionPoint.clone();
         isDrawing = true;
         
+        console.log('🎯 절단 시작점 (외부 가능):', startPoint);
+        
         infoDiv.className = 'info drawing';
-        infoDiv.textContent = '드래그 중... 마우스를 놓으면 절단됩니다';
+        infoDiv.textContent = '✏️ 드래그하여 절단선을 그으세요... (어디서든 시작 가능!)';
         
         // 절단선 헬퍼 생성
         if (cutLineHelper) scene.remove(cutLineHelper);
@@ -452,26 +533,63 @@ function onMouseMove(event) {
     if (!isDrawing) return;
     
     const rect = canvas.getBoundingClientRect();
-    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    
+    // 캔버스 영역을 벗어나도 추적 (무한 드래그)
+    let mouseX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    let mouseY = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    
+    // 범위 제한 없음 (캔버스 밖으로도 가능)
+    mouse.x = mouseX;
+    mouse.y = mouseY;
     
     raycaster.setFromCamera(mouse, camera);
-    const intersects = raycaster.intersectObjects(scene.children, true);
     
-    if (intersects.length > 0 && startPoint) {
-        endPoint = intersects[0].point.clone();
+    // 절단 평면 (Z=0)에 ray 투사
+    const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+    const intersectionPoint = new THREE.Vector3();
+    raycaster.ray.intersectPlane(plane, intersectionPoint);
+    
+    if (intersectionPoint && startPoint) {
+        endPoint = intersectionPoint.clone();
         
-        // 절단선 시각화
-        if (cutLineHelper) scene.remove(cutLineHelper);
+        console.log('🎯 절단 끝점:', endPoint);
+        
+        // 절단선 시각화 - 기존 것 제거
+        if (cutLineHelper) {
+            scene.remove(cutLineHelper);
+            if (cutLineHelper.userData.spheres) {
+                cutLineHelper.userData.spheres.forEach(sphere => scene.remove(sphere));
+            }
+        }
         
         const points = [startPoint, endPoint];
         const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
         const lineMaterial = new THREE.LineBasicMaterial({ 
             color: 0xff0000, 
-            linewidth: 3 
+            linewidth: 5,
+            transparent: true,
+            opacity: 0.8
         });
         cutLineHelper = new THREE.Line(lineGeometry, lineMaterial);
+        
+        // 시작점과 끝점 시각화 (원)
+        const startSphere = new THREE.Mesh(
+            new THREE.SphereGeometry(2, 16, 16),
+            new THREE.MeshBasicMaterial({ color: 0x00ff00 })
+        );
+        startSphere.position.copy(startPoint);
+        
+        const endSphere = new THREE.Mesh(
+            new THREE.SphereGeometry(2, 16, 16),
+            new THREE.MeshBasicMaterial({ color: 0xff0000 })
+        );
+        endSphere.position.copy(endPoint);
+        
+        // 그룹으로 관리
+        cutLineHelper.userData.spheres = [startSphere, endSphere];
         scene.add(cutLineHelper);
+        scene.add(startSphere);
+        scene.add(endSphere);
     }
 }
 
@@ -486,6 +604,10 @@ function onMouseUp(event) {
     
     if (cutLineHelper) {
         scene.remove(cutLineHelper);
+        // 시작/끝점 구체도 제거
+        if (cutLineHelper.userData.spheres) {
+            cutLineHelper.userData.spheres.forEach(sphere => scene.remove(sphere));
+        }
         cutLineHelper = null;
     }
     
@@ -520,7 +642,7 @@ function performCut(start, end) {
     const meshesToCut = [...meshes];
     
     meshesToCut.forEach(meshData => {
-        const { threeMesh, cannonBody } = meshData;
+        const { threeMesh, physicsBody } = meshData;
         
         // 메쉬가 절단선과 교차하는지 확인
         const geometry = threeMesh.geometry;
@@ -548,12 +670,10 @@ function performCut(start, end) {
             
             // 기존 메쉬 제거
             scene.remove(threeMesh);
-            world.removeBody(cannonBody);
             const index = meshes.indexOf(meshData);
             if (index > -1) meshes.splice(index, 1);
             
             // 간단한 분할 (2개로)
-            // 실제로는 더 복잡한 CSG 알고리즘 필요
             splitMeshSimple(meshData, cutPlane, start, end);
         }
     });
@@ -565,7 +685,7 @@ function splitMeshSimple(meshData, cutPlane, start, end) {
     const { threeMesh, originalColor } = meshData;
     const geometry = threeMesh.geometry;
     
-    // 정점 분류
+    // 정점 분류 (World Space로 변환)
     const positionAttribute = geometry.attributes.position;
     const posVertices = [];
     const negVertices = [];
@@ -577,10 +697,12 @@ function splitMeshSimple(meshData, cutPlane, start, end) {
             positionAttribute.getZ(i)
         );
         
-        const distance = cutPlane.distanceToPoint(vertex);
+        // World space로 변환
+        const worldVertex = vertex.clone().applyMatrix4(threeMesh.matrixWorld);
+        const distance = cutPlane.distanceToPoint(worldVertex);
         
         if (distance >= 0) {
-            posVertices.push(vertex);
+            posVertices.push(vertex); // Local space 저장
         } else {
             negVertices.push(vertex);
         }
@@ -600,8 +722,12 @@ function splitMeshSimple(meshData, cutPlane, start, end) {
             positionAttribute.getZ(i + 1)
         );
         
-        const d1 = cutPlane.distanceToPoint(v1);
-        const d2 = cutPlane.distanceToPoint(v2);
+        // World space로 변환하여 거리 계산
+        const worldV1 = v1.clone().applyMatrix4(threeMesh.matrixWorld);
+        const worldV2 = v2.clone().applyMatrix4(threeMesh.matrixWorld);
+        
+        const d1 = cutPlane.distanceToPoint(worldV1);
+        const d2 = cutPlane.distanceToPoint(worldV2);
         
         // 선분이 평면과 교차
         if ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) {
@@ -613,7 +739,7 @@ function splitMeshSimple(meshData, cutPlane, start, end) {
         }
     }
     
-    console.log(`분할 결과: ${posVertices.length} + ${negVertices.length} 정점`);
+    console.log(`✂️ 분할 결과: ${posVertices.length} + ${negVertices.length} 정점`);
     
     // 새 Shape 생성 (간소화)
     if (posVertices.length >= 3) {
@@ -622,11 +748,10 @@ function splitMeshSimple(meshData, cutPlane, start, end) {
             { shape: shape1, color: getRandomColor() },
             threeMesh.position.clone()
         );
-        // 임펄스 적용
-        mesh1.cannonBody.applyImpulse(
-            new CANNON.Vec3(-5 + Math.random() * 2, 5, 0),
-            new CANNON.Vec3(0, 0, 0)
-        );
+        // 임펄스 적용 (커스텀 물리) - 왼쪽으로
+        const impulse = new THREE.Vector3(-8 + Math.random() * 3, 8, 0);
+        mesh1.physicsBody.applyImpulse(impulse, new THREE.Vector3(0, 0, 0));
+        console.log('✅ 왼쪽 조각 생성');
     }
     
     if (negVertices.length >= 3) {
@@ -635,11 +760,10 @@ function splitMeshSimple(meshData, cutPlane, start, end) {
             { shape: shape2, color: getRandomColor() },
             threeMesh.position.clone()
         );
-        // 임펄스 적용
-        mesh2.cannonBody.applyImpulse(
-            new CANNON.Vec3(5 + Math.random() * 2, 5, 0),
-            new CANNON.Vec3(0, 0, 0)
-        );
+        // 임펄스 적용 (커스텀 물리) - 오른쪽으로
+        const impulse = new THREE.Vector3(8 + Math.random() * 3, 8, 0);
+        mesh2.physicsBody.applyImpulse(impulse, new THREE.Vector3(0, 0, 0));
+        console.log('✅ 오른쪽 조각 생성');
     }
 }
 
@@ -704,7 +828,8 @@ function loadSelectedShape() {
             shapeData = createSquareShape();
     }
     
-    createMeshFromShape(shapeData);
+    // 위에서 시작해서 아래로 떨어지도록 초기 위치 설정
+    createMeshFromShape(shapeData, { x: 0, y: 50, z: 0 });
     
     infoDiv.textContent = `${shapeType} 도형이 로드되었습니다. 드래그하여 절단하세요.`;
 }
@@ -713,7 +838,9 @@ function resetScene() {
     // 모든 메쉬 제거
     meshes.forEach(meshData => {
         scene.remove(meshData.threeMesh);
-        world.removeBody(meshData.cannonBody);
+        // geometry와 material 해제
+        if (meshData.threeMesh.geometry) meshData.threeMesh.geometry.dispose();
+        if (meshData.threeMesh.material) meshData.threeMesh.material.dispose();
     });
     meshes = [];
     
@@ -724,22 +851,44 @@ function resetScene() {
     updateStats();
 }
 
+function clearAllMeshes() {
+    // 모든 메쉬만 제거 (새 도형 로드 안 함)
+    meshes.forEach(meshData => {
+        scene.remove(meshData.threeMesh);
+        // geometry와 material 해제
+        if (meshData.threeMesh.geometry) meshData.threeMesh.geometry.dispose();
+        if (meshData.threeMesh.material) meshData.threeMesh.material.dispose();
+    });
+    meshes = [];
+    
+    infoDiv.textContent = '모든 도형이 제거되었습니다. 새 도형을 불러오세요.';
+    updateStats();
+    
+    console.log('🗑️ 모든 메쉬 제거 완료');
+}
+
 function toggleWireframe() {
     wireframeMode = !wireframeMode;
     
     const btn = document.querySelector('.btn-wireframe');
+    
+    // 모든 메쉬에 와이어프레임 적용
     meshes.forEach(meshData => {
-        meshData.threeMesh.material.wireframe = wireframeMode;
+        if (meshData.threeMesh && meshData.threeMesh.material) {
+            meshData.threeMesh.material.wireframe = wireframeMode;
+        }
     });
     
     if (wireframeMode) {
         btn.classList.add('active');
         btn.textContent = '🔍 와이어프레임 ON';
-        infoDiv.textContent = '와이어프레임 모드 활성화';
+        infoDiv.textContent = '와이어프레임 모드 활성화 - 메쉬의 내부 구조를 볼 수 있습니다';
+        console.log('🔍 와이어프레임 모드 ON');
     } else {
         btn.classList.remove('active');
         btn.textContent = '🔍 와이어프레임';
         infoDiv.textContent = '일반 모드';
+        console.log('🔍 와이어프레임 모드 OFF');
     }
 }
 
@@ -758,13 +907,13 @@ function updateStats() {
         totalVertices += m.userData.vertices;
     });
     document.getElementById('vertexCount').textContent = totalVertices;
-    
-    document.getElementById('drawCalls').textContent = renderer.info.render.calls;
 }
 
 // ==========================================
-// 애니메이션 루프
+// 애니메이션 루프 (커스텀 물리 업데이트)
 // ==========================================
+
+let lastUpdateTime = performance.now();
 
 function animate() {
     requestAnimationFrame(animate);
@@ -779,13 +928,13 @@ function animate() {
         lastTime = currentTime;
     }
     
-    // 물리 업데이트
-    world.step(1 / 60);
+    // 델타 타임 계산
+    const deltaTime = Math.min((currentTime - lastUpdateTime) / 1000, 0.1); // 최대 0.1초
+    lastUpdateTime = currentTime;
     
-    // Three.js 메쉬를 Cannon.js 위치와 동기화
+    // 커스텀 물리 업데이트
     meshes.forEach(meshData => {
-        meshData.threeMesh.position.copy(meshData.cannonBody.position);
-        meshData.threeMesh.quaternion.copy(meshData.cannonBody.quaternion);
+        meshData.physicsBody.update(deltaTime);
     });
     
     // Controls 업데이트

@@ -1,11 +1,9 @@
 <!DOCTYPE html>
 <html lang="ko">
-<meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;">
-<meta http-equiv="X-Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>동적 메쉬 커팅 시스템 - Three.js + Cannon.js</title>
+    <title>동적 메쉬 커팅 시스템 - 3D 버전 (Cannon.js)</title>
     <style>
         * {
             margin: 0;
@@ -15,7 +13,7 @@
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
             display: flex;
             justify-content: center;
             align-items: flex-start;
@@ -51,7 +49,7 @@
         }
 
         .badge {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
             color: white;
             padding: 5px 15px;
             border-radius: 20px;
@@ -59,20 +57,20 @@
             font-weight: 600;
         }
 
-        .badge.cannon {
-            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
+        .badge.feature {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
         }
 
         .instructions {
-            background: #fff4e6;
+            background: #fff0f6;
             padding: 15px;
             border-radius: 10px;
             margin-bottom: 20px;
-            border-left: 4px solid #ff6b6b;
+            border-left: 4px solid #f093fb;
         }
 
         .instructions h3 {
-            color: #ff6b6b;
+            color: #f5576c;
             margin-bottom: 8px;
         }
 
@@ -86,11 +84,11 @@
             padding: 15px;
             border-radius: 10px;
             margin-bottom: 20px;
-            border-left: 4px solid #339af0;
+            border-left: 4px solid #4facfe;
         }
 
         .comparison h3 {
-            color: #339af0;
+            color: #0c8599;
             margin-bottom: 8px;
         }
 
@@ -101,7 +99,7 @@
 
         .canvas-container {
             position: relative;
-            border: 3px solid #ff6b6b;
+            border: 3px solid #f093fb;
             border-radius: 10px;
             overflow: hidden;
             background: #000;
@@ -207,7 +205,7 @@
         .shape-selector select {
             padding: 8px 16px;
             border-radius: 6px;
-            border: 2px solid #ff6b6b;
+            border: 2px solid #f093fb;
             font-size: 14px;
             cursor: pointer;
         }
@@ -235,10 +233,10 @@
         }
 
         .stat-card {
-            background: linear-gradient(135deg, #ff6b6b20 0%, #ee5a6f20 100%);
+            background: linear-gradient(135deg, #f093fb20 0%, #f5576c20 100%);
             padding: 12px;
             border-radius: 8px;
-            border: 2px solid #ff6b6b40;
+            border: 2px solid #f093fb40;
         }
 
         .stat-label {
@@ -266,58 +264,57 @@
 </head>
 <body>
     <div class="container">
-        <h1>🔪 동적 메쉬 커팅 시스템 (With Cannon.js)</h1>
+        <h1>🔪 동적 메쉬 커팅 시스템 - 3D 버전</h1>
         
         <div class="tech-badge">
             <span class="badge">WebGL</span>
             <span class="badge">Three.js r150+</span>
-            <span class="badge cannon">🚀 Cannon.js 물리 엔진</span>
-            <span class="badge cannon">⚡ 프로페셔널</span>
+            <span class="badge">🚀 Cannon.js</span>
+            <span class="badge feature">🎁 3D ExtrudeGeometry</span>
         </div>
 
         <div class="comparison">
-            <h3>✨ Cannon.js의 장점:</h3>
+            <h3>🎁 3D 메시의 특징:</h3>
             <ul>
-                <li>🎯 <strong>더 정확한 물리 시뮬레이션</strong> - 전문 물리 엔진의 정확도</li>
-                <li>🤖 <strong>자동 충돌 감지</strong> - 복잡한 충돌 처리를 자동으로 수행</li>
-                <li>⚙️ <strong>다양한 물리 속성</strong> - 마찰, 반발, 감쇠를 쉽게 설정</li>
-                <li>📦 <strong>적은 코드량</strong> - 수백 줄의 물리 코드를 몇 줄로 대체</li>
-                <li>🔧 <strong>최적화된 성능</strong> - Broadphase 알고리즘으로 효율적인 충돌 감지</li>
+                <li>📦 <strong>ExtrudeGeometry</strong> - 2D Shape를 3D 입체로 변환</li>
+                <li>🌟 <strong>깊이(depth)</strong> - Z축 두께가 있는 실제 3D 객체</li>
+                <li>🔄 <strong>3D 회전</strong> - X, Y, Z축 모두 자유롭게 회전</li>
+                <li>⚖️ <strong>현실적인 물리</strong> - 실제 3D 객체처럼 떨어지고 충돌</li>
+                <li>💡 <strong>양면 렌더링</strong> - 앞면과 뒷면 모두 보임</li>
             </ul>
         </div>
 
         <div class="instructions">
-            <h3>🎮 사용 방법 (2D 스타일 자유 절단!):</h3>
+            <h3>🎮 사용 방법 (3D 메시 절단!):</h3>
             <ol>
                 <li>✏️ <strong>캔버스 어디서든</strong> 마우스를 드래그하여 절단선을 그으세요</li>
-                <li>🎯 도형 외부에서도 시작 가능! (무한 드래그 지원)</li>
-                <li>📏 시작점과 끝점을 잇는 직선을 기준으로 메쉬가 분할됩니다</li>
-                <li>🌟 녹색(시작) → 빨간색(끝) 점으로 절단선 표시</li>
-                <li>💥 분할된 메쉬는 Cannon.js 물리 효과로 자연스럽게 날아갑니다</li>
+                <li>🎯 절단선은 2D 평면 기준으로 작동하지만, 3D 메시가 잘립니다</li>
+                <li>📦 잘린 조각들은 실제 3D 객체처럼 떨어집니다</li>
+                <li>🌀 X, Y, Z축 모두에서 회전하며 떨어지는 모습을 볼 수 있습니다</li>
                 <li>🔄 마우스 우클릭 드래그로 카메라 회전 | 휠로 줌</li>
             </ol>
             <p style="margin-top: 10px; font-size: 12px; color: #666;">
-                🚀 <strong>Cannon.js 물리 엔진:</strong> 정확한 중력, 충돌, 반발 계산!<br>
-                📐 <strong>2D 스타일 절단:</strong> 포토샵/일러스트처럼 자유롭게 선 긋기!
+                🎁 <strong>3D ExtrudeGeometry:</strong> 깊이가 있는 실제 3D 메시!<br>
+                ⚡ <strong>Cannon.js 3D 물리:</strong> X, Y, Z축 모두에서 현실적인 물리 시뮬레이션!
             </p>
         </div>
 
         <div class="shape-selector">
             <label for="shapeSelect">테스트 도형 선택:</label>
             <select id="shapeSelect">
-                <option value="leaf">🍃 나뭇잎 (SVG)</option>
-                <option value="triangle">🔺 삼각형</option>
-                <option value="square">🟦 사각형</option>
-                <option value="pentagon">⬟ 오각형</option>
-                <option value="circle">⭕ 원</option>
+                <option value="leaf">🍃 나뭇잎 (SVG) - 3D</option>
+                <option value="triangle">🔺 삼각형 - 3D</option>
+                <option value="square">🟦 사각형 - 3D</option>
+                <option value="pentagon">⬟ 오각형 - 3D</option>
+                <option value="circle">⭕ 원 - 3D</option>
             </select>
         </div>
 
         <div class="canvas-container">
             <canvas id="canvas"></canvas>
             <div id="loading" class="loading">
-                <div style="font-size: 24px; margin-bottom: 10px;">🚀 로딩 중...</div>
-                <div id="loadingProgress" style="font-size: 14px;">Cannon.js + Three.js 로드 중...</div>
+                <div style="font-size: 24px; margin-bottom: 10px;">🎁 로딩 중...</div>
+                <div id="loadingProgress" style="font-size: 14px;">3D Cannon.js + Three.js 로드 중...</div>
             </div>
         </div>
 
@@ -329,7 +326,7 @@
             <button class="btn-camera" onclick="resetCamera()">📷 카메라 리셋</button>
         </div>
 
-        <div id="info" class="info">✏️ 캔버스 어디서든 드래그하여 메쉬를 절단하세요! (Cannon.js 물리 엔진)</div>
+        <div id="info" class="info">✏️ 캔버스 어디서든 드래그하여 3D 메쉬를 절단하세요!</div>
 
         <div class="stats">
             <div class="stat-card">
@@ -354,7 +351,7 @@
     <!-- 로딩 시간 측정 -->
     <script>
         const loadStartTime = performance.now();
-        console.log('🚀 Cannon.js + Three.js 버전 로딩 시작...');
+        console.log('🎁 3D Cannon.js + Three.js 버전 로딩 시작...');
     </script>
 
     <!-- Three.js 라이브러리 (로컬) -->
@@ -370,7 +367,7 @@
     <script>
         const loadEndTime = performance.now();
         const loadTime = ((loadEndTime - loadStartTime) / 1000).toFixed(3);
-        console.log(`✅ 라이브러리 로드 완료: ${loadTime}초 (Cannon.js 포함)`);
+        console.log(`✅ 라이브러리 로드 완료: ${loadTime}초 (3D + Cannon.js)`);
         
         // 통계에 로딩 시간 표시
         window.addEventListener('DOMContentLoaded', () => {
@@ -381,8 +378,9 @@
         });
     </script>
     
-    <!-- 메인 스크립트 (Cannon.js 버전) -->
-    <script src="mesh-cutting-with-cannon.js"></script>
+    <!-- 메인 스크립트 (3D 버전) -->
+    <script src="mesh-cutting-3d.js"></script>
 </body>
 </html>
+
 

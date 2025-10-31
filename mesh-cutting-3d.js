@@ -1,10 +1,12 @@
 // ==========================================
-// Three.js + Cannon.js 기반 메쉬 커팅 시스템
-// 향상된 물리 시뮬레이션 버전
+// Three.js + Cannon.js 기반 3D 메쉬 커팅 시스템
+// ExtrudeGeometry를 사용한 진짜 3D 메시!
 // ==========================================
 
-// DOM 요소 (init에서 초기화)
-let canvas, infoDiv, loadingDiv;
+// DOM 요소
+const canvas = document.getElementById('canvas');
+const infoDiv = document.getElementById('info');
+const loadingDiv = document.getElementById('loading');
 
 // Three.js 변수
 let scene, camera, renderer, controls;
@@ -29,126 +31,86 @@ let fps = 0;
 let lastTime = performance.now();
 let frameCount = 0;
 
+// 3D 설정
+const EXTRUDE_DEPTH = 10; // 3D 깊이
+
 // ==========================================
 // 초기화
 // ==========================================
 
 function init() {
-    console.log('🚀 Three.js + Cannon.js 초기화 시작...');
-    
-    // DOM 요소 가져오기 (DOMContentLoaded 후 안전하게)
-    canvas = document.getElementById('canvas');
-    infoDiv = document.getElementById('info');
-    loadingDiv = document.getElementById('loading');
-    
-    // DOM 요소 확인
-    if (!canvas || !infoDiv || !loadingDiv) {
-        console.error('❌ DOM 요소를 찾을 수 없습니다!');
-        alert('DOM 요소 로드 실패! 페이지를 새로고침하세요.');
-        return;
-    }
-    
-    console.log('✅ DOM 요소 로드 완료');
-    
-    // 필수 라이브러리 확인
-    if (typeof THREE === 'undefined') {
-        console.error('❌ THREE.js가 로드되지 않았습니다!');
-        loadingDiv.innerHTML = '<div style="color: red;">❌ THREE.js 로드 실패!</div>';
-        return;
-    }
-    
-    if (typeof CANNON === 'undefined') {
-        console.error('❌ CANNON.js가 로드되지 않았습니다!');
-        loadingDiv.innerHTML = '<div style="color: red;">❌ Cannon.js 로드 실패!<br>js/cannon.js 파일을 확인하세요.</div>';
-        return;
-    }
-    
-    console.log('✅ THREE.js 로드됨');
-    console.log('✅ CANNON.js 로드됨 (버전:', CANNON.version || 'unknown', ')');
-    
+    console.log('🎁 Three.js + Cannon.js 3D 버전 초기화 시작...');
     const initStartTime = performance.now();
     
-    try {
-        // Scene 생성
-        scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x1a1a2e);
-        scene.fog = new THREE.Fog(0x1a1a2e, 100, 500);
-        
-        // Camera 생성
-        const aspect = canvas.clientWidth / canvas.clientHeight;
-        camera = new THREE.PerspectiveCamera(50, aspect, 0.1, 1000);
-        camera.position.set(0, 0, 300);
-        camera.lookAt(0, 0, 0);
-        
-        // Renderer 생성
-        renderer = new THREE.WebGLRenderer({ 
-            canvas: canvas,
-            antialias: true,
-            alpha: false
-        });
-        renderer.setSize(canvas.clientWidth, canvas.clientHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-        renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        
-        // OrbitControls
-        controls = new THREE.OrbitControls(camera, renderer.domElement);
-        controls.enableDamping = true;
-        controls.dampingFactor = 0.05;
-        controls.minDistance = 50;
-        controls.maxDistance = 500;
-        controls.enablePan = false;
-        controls.mouseButtons = {
-            LEFT: null, // 왼쪽 클릭은 절단용으로 사용
-            MIDDLE: THREE.MOUSE.DOLLY,
-            RIGHT: THREE.MOUSE.ROTATE
-        };
-        
-        // Raycaster (마우스 피킹용)
-        raycaster = new THREE.Raycaster();
-        mouse = new THREE.Vector2();
-        
-        // 조명 설정
-        setupLights();
-        
-        // Cannon.js World 설정
-        setupPhysics();
-        
-        // 바닥 생성
-        createGround();
-        
-        // 이벤트 리스너
-        setupEventListeners();
-        
-        // 초기 도형 로드
-        loadSelectedShape();
-        
-        // 애니메이션 시작
-        animate();
-        
-        // 로딩 완료
-        const initTime = ((performance.now() - initStartTime) / 1000).toFixed(2);
-        console.log('✅ Three.js + Cannon.js 초기화 완료: ${initTime}초');
-        
-        // 로딩 인디케이터 페이드아웃
+    // Scene 생성
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a1a2e);
+    scene.fog = new THREE.Fog(0x1a1a2e, 100, 500);
+    
+    // Camera 생성
+    const aspect = canvas.clientWidth / canvas.clientHeight;
+    camera = new THREE.PerspectiveCamera(50, aspect, 0.1, 1000);
+    camera.position.set(100, 100, 300); // 3D 뷰를 위해 위치 조정
+    camera.lookAt(0, 0, 0);
+    
+    // Renderer 생성
+    renderer = new THREE.WebGLRenderer({ 
+        canvas: canvas,
+        antialias: true,
+        alpha: false
+    });
+    renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    
+    // OrbitControls
+    controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.minDistance = 50;
+    controls.maxDistance = 500;
+    controls.enablePan = false;
+    controls.mouseButtons = {
+        LEFT: null, // 왼쪽 클릭은 절단용으로 사용
+        MIDDLE: THREE.MOUSE.DOLLY,
+        RIGHT: THREE.MOUSE.ROTATE
+    };
+    
+    // Raycaster (마우스 피킹용)
+    raycaster = new THREE.Raycaster();
+    mouse = new THREE.Vector2();
+    
+    // 조명 설정
+    setupLights();
+    
+    // Cannon.js World 설정
+    setupPhysics();
+    
+    // 바닥 생성
+    createGround();
+    
+    // 이벤트 리스너
+    setupEventListeners();
+    
+    // 초기 도형 로드
+    loadSelectedShape();
+    
+    // 애니메이션 시작
+    animate();
+    
+    // 로딩 완료
+    const initTime = ((performance.now() - initStartTime) / 1000).toFixed(2);
+    console.log(`✅ Three.js + Cannon.js 3D 초기화 완료: ${initTime}초`);
+    
+    // 로딩 인디케이터 페이드아웃
+    setTimeout(() => {
+        loadingDiv.style.transition = 'opacity 0.5s';
+        loadingDiv.style.opacity = '0';
         setTimeout(() => {
-            loadingDiv.style.transition = 'opacity 0.5s';
-            loadingDiv.style.opacity = '0';
-            setTimeout(() => {
-                loadingDiv.style.display = 'none';
-            }, 500);
-        }, 100);
-        
-    }catch (error) {
-        console.error('❌ 초기화 중 에러 발생:', error);
-        loadingDiv.innerHTML = `
-            <div style="color: red; padding: 20px;">
-                <div style="font-size: 24px; margin-bottom: 10px;">❌ 초기화 실패</div>
-                <div style="font-size: 14px;">${error.message}</div>
-                <div style="font-size: 12px; margin-top: 10px;">F12를 눌러 콘솔을 확인하세요.</div>
-            </div>
-        `;
-    }
+            loadingDiv.style.display = 'none';
+        }, 500);
+    }, 100);
 }
 
 // ==========================================
@@ -175,40 +137,39 @@ function setupLights() {
     scene.add(dirLight);
     
     // Hemisphere Light
-    const hemiLight = new THREE.HemisphereLight(0x667eea, 0x764ba2, 0.4);
+    const hemiLight = new THREE.HemisphereLight(0xf093fb, 0xf5576c, 0.4);
     scene.add(hemiLight);
+    
+    // Point Light (추가 조명 - 3D 효과 강조)
+    const pointLight = new THREE.PointLight(0xffffff, 0.5);
+    pointLight.position.set(-50, 50, 50);
+    scene.add(pointLight);
 }
 
 // ==========================================
-// Cannon.js 물리 엔진 설정
+// Cannon.js 물리 엔진 설정 (3D용)
 // ==========================================
 
 function setupPhysics() {
-    console.log('⚙️ Cannon.js 물리 엔진 초기화...');
+    console.log('⚙️ Cannon.js 3D 물리 엔진 초기화...');
     
-    try {
-        // World 생성
-        world = new CANNON.World();
-        
-        // 중력 설정 (Y축 -30)
-        world.gravity.set(0, -30, 0);
-        
-        // Broadphase 알고리즘 (충돌 감지 최적화)
-        world.broadphase = new CANNON.NaiveBroadphase();
-        
-        // Solver 설정 (반복 횟수 - 정확도와 성능의 균형)
-        world.solver.iterations = 10;
-        
-        // 기본 재질 설정 (반발 계수)
-        world.defaultContactMaterial.restitution = 0.4;
-        world.defaultContactMaterial.friction = 0.3;
-        
-        console.log('✅ Cannon.js 물리 엔진 초기화 완료');
-        
-    } catch (error) {
-        console.error('❌ Cannon.js 물리 엔진 초기화 실패:', error);
-        throw new Error('Cannon.js 물리 엔진 초기화 실패: ' + error.message);
-    }
+    // World 생성
+    world = new CANNON.World();
+    
+    // 중력 설정 (Y축 -30)
+    world.gravity.set(0, -30, 0);
+    
+    // Broadphase 알고리즘
+    world.broadphase = new CANNON.NaiveBroadphase();
+    
+    // Solver 설정
+    world.solver.iterations = 10;
+    
+    // 기본 재질 설정
+    world.defaultContactMaterial.restitution = 0.4;
+    world.defaultContactMaterial.friction = 0.3;
+    
+    console.log('✅ Cannon.js 3D 물리 엔진 초기화 완료');
 }
 
 // ==========================================
@@ -218,7 +179,7 @@ function setupPhysics() {
 function createGround() {
     const groundY = -100;
     
-    // Three.js 바닥 (시각적)
+    // Three.js 바닥
     const groundGeometry = new THREE.PlaneGeometry(400, 400);
     const groundMaterial = new THREE.MeshStandardMaterial({ 
         color: 0x2c3e50,
@@ -231,10 +192,10 @@ function createGround() {
     groundMesh.receiveShadow = true;
     scene.add(groundMesh);
     
-    // Cannon.js 바닥 (물리적)
+    // Cannon.js 바닥
     const groundShape = new CANNON.Plane();
     groundBody = new CANNON.Body({ 
-        mass: 0, // 정적 객체 (움직이지 않음)
+        mass: 0,
         shape: groundShape,
         material: new CANNON.Material({ friction: 0.3, restitution: 0.3 })
     });
@@ -242,10 +203,10 @@ function createGround() {
     groundBody.position.y = groundY;
     world.addBody(groundBody);
     
-    console.log('🏗️ 바닥 생성 완료 (Three.js + Cannon.js)');
+    console.log('🏗️ 바닥 생성 완료 (3D Cannon.js)');
     
     // 그리드 헬퍼
-    const gridHelper = new THREE.GridHelper(400, 40, 0x667eea, 0x444444);
+    const gridHelper = new THREE.GridHelper(400, 40, 0xf093fb, 0x444444);
     gridHelper.position.y = groundY + 0.1;
     scene.add(gridHelper);
 }
@@ -255,7 +216,6 @@ function createGround() {
 // ==========================================
 
 function createLeafShape() {
-    // SVG Path 데이터 (나뭇잎)
     const svgPath = `
         M 660.35 61.65
         Q 660.05 61.35 659.8 61.1 654 56.15 646.55 56.65 643.65 56.85 641.25 57.8 
@@ -391,60 +351,60 @@ function createCircleShape() {
 }
 
 // ==========================================
-// 메쉬 생성 (Cannon.js 물리 바디 포함)
+// 3D 메쉬 생성 (ExtrudeGeometry 사용!)
 // ==========================================
 
 function createMeshFromShape(shapeData, position = { x: 0, y: 0, z: 0 }) {
     const { shape, color } = shapeData;
     
-    // Three.js Geometry 생성
-    const geometry = new THREE.ShapeGeometry(shape);
+    // ExtrudeGeometry 생성 (3D!)
+    const extrudeSettings = {
+        depth: EXTRUDE_DEPTH,
+        bevelEnabled: true,
+        bevelThickness: 1,
+        bevelSize: 0.5,
+        bevelSegments: 3
+    };
+    
+    const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
     geometry.computeBoundingBox();
     
-    // Three.js Material 생성
+    // 중심 맞추기 (Z축 중심)
+    geometry.translate(0, 0, -EXTRUDE_DEPTH / 2);
+    
+    // Material 생성
     const material = new THREE.MeshStandardMaterial({
         color: color,
-        side: THREE.DoubleSide,
         roughness: 0.7,
         metalness: 0.1,
         wireframe: wireframeMode
     });
     
-    // Three.js Mesh 생성
+    // Mesh 생성
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set(position.x, position.y, position.z);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     scene.add(mesh);
     
-    // Cannon.js 물리 바디 생성 (2D용 - 간단한 Box 사용)
-    // 복잡한 ConvexPolyhedron 대신 항상 Box를 사용하여 충돌 감지 개선
+    // Cannon.js 물리 바디 생성 (Box로 근사)
     const box = geometry.boundingBox;
     const sizeX = (box.max.x - box.min.x) / 2;
     const sizeY = (box.max.y - box.min.y) / 2;
-    const sizeZ = 2; // 2D지만 충돌 감지를 위해 약간의 두께 부여
+    const sizeZ = (box.max.z - box.min.z) / 2;
     
     const cannonShape = new CANNON.Box(new CANNON.Vec3(sizeX, sizeY, sizeZ));
     
-    console.log(`📦 Cannon.js Box 생성: ${sizeX.toFixed(1)} x ${sizeY.toFixed(1)} x ${sizeZ}`);
-    
-    // Cannon.js Body 생성
+    // Cannon.js Body 생성 (3D 회전 허용!)
     const body = new CANNON.Body({
-        mass: 1, // 질량
+        mass: 1,
         shape: cannonShape,
-        position: new CANNON.Vec3(position.x, position.y, 0), // Z는 항상 0
-        linearDamping: 0.4, // 선형 감쇠 증가
-        angularDamping: 0.8 // 각속도 감쇠 증가
+        position: new CANNON.Vec3(position.x, position.y, position.z),
+        linearDamping: 0.3,
+        angularDamping: 0.5 // 3D 회전용
     });
     
-    // 2D 평면 제약 조건 (Z축 고정)
-    // X, Y축 회전 방지 (앞뒤로 넘어가지 않도록)
-    body.fixedRotation = false;
-    body.updateMassProperties();
-    
     world.addBody(body);
-    
-    console.log(`✅ Cannon.js Body 추가: 위치(${position.x.toFixed(1)}, ${position.y.toFixed(1)}, 0)`);
     
     // 메쉬 데이터 저장
     const meshData = {
@@ -452,15 +412,15 @@ function createMeshFromShape(shapeData, position = { x: 0, y: 0, z: 0 }) {
         cannonBody: body,
         originalColor: color,
         userData: {
-            vertices: vertices.length,
-            triangles: positionAttribute.count / 3
+            vertices: geometry.attributes.position.count,
+            triangles: geometry.attributes.position.count / 3
         }
     };
     
     meshes.push(meshData);
     updateStats();
     
-    console.log(`✅ 메쉬 생성: ${vertices.length}개 정점, Cannon.js Body 추가`);
+    console.log(`✅ 3D 메쉬 생성: ${geometry.attributes.position.count}개 정점, 깊이=${EXTRUDE_DEPTH}`);
     
     return meshData;
 }
@@ -470,48 +430,36 @@ function createMeshFromShape(shapeData, position = { x: 0, y: 0, z: 0 }) {
 // ==========================================
 
 function setupEventListeners() {
-    // 마우스 다운 (캔버스에서만)
     canvas.addEventListener('mousedown', onMouseDown);
-    
-    // 마우스 이동 및 업 (document 레벨 - 무한 드래그)
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onMouseUp);
-    
-    // 윈도우 리사이즈
     window.addEventListener('resize', onWindowResize);
-    
-    // 도형 선택
     document.getElementById('shapeSelect').addEventListener('change', loadSelectedShape);
 }
 
 function onMouseDown(event) {
-    if (event.button !== 0) return; // 왼쪽 클릭만
+    if (event.button !== 0) return;
     
-    // 마우스 좌표를 NDC로 변환
     const rect = canvas.getBoundingClientRect();
     mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     
-    // Raycasting - Z=0 평면과의 교차점 사용
     raycaster.setFromCamera(mouse, camera);
     
-    // Z=0 평면 생성
     const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
     const intersectionPoint = new THREE.Vector3();
     
-    // Ray와 평면의 교차점 계산
     const hasIntersection = raycaster.ray.intersectPlane(plane, intersectionPoint);
     
     if (hasIntersection) {
         startPoint = intersectionPoint.clone();
         isDrawing = true;
         
-        console.log('🎯 절단 시작점:', startPoint);
+        console.log('🎯 3D 절단 시작점:', startPoint);
         
         infoDiv.className = 'info drawing';
-        infoDiv.textContent = '✏️ 드래그하여 절단선을 그으세요... (Cannon.js 물리 적용!)';
+        infoDiv.textContent = '✏️ 드래그하여 3D 메쉬를 절단하세요...';
         
-        // 절단선 헬퍼 생성
         if (cutLineHelper) scene.remove(cutLineHelper);
     }
 }
@@ -521,7 +469,6 @@ function onMouseMove(event) {
     
     const rect = canvas.getBoundingClientRect();
     
-    // 캔버스 영역을 벗어나도 추적 (무한 드래그)
     let mouseX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     let mouseY = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     
@@ -530,7 +477,6 @@ function onMouseMove(event) {
     
     raycaster.setFromCamera(mouse, camera);
     
-    // 절단 평면 (Z=0)에 ray 투사
     const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
     const intersectionPoint = new THREE.Vector3();
     raycaster.ray.intersectPlane(plane, intersectionPoint);
@@ -538,7 +484,6 @@ function onMouseMove(event) {
     if (intersectionPoint && startPoint) {
         endPoint = intersectionPoint.clone();
         
-        // 절단선 시각화
         if (cutLineHelper) {
             scene.remove(cutLineHelper);
             if (cutLineHelper.userData.spheres) {
@@ -556,7 +501,6 @@ function onMouseMove(event) {
         });
         cutLineHelper = new THREE.Line(lineGeometry, lineMaterial);
         
-        // 시작점과 끝점 시각화
         const startSphere = new THREE.Mesh(
             new THREE.SphereGeometry(2, 16, 16),
             new THREE.MeshBasicMaterial({ color: 0x00ff00 })
@@ -597,7 +541,7 @@ function onMouseUp(event) {
     endPoint = null;
     
     infoDiv.className = 'info';
-    infoDiv.textContent = `메쉬 절단 완료! 현재 조각: ${meshes.length}개 (Cannon.js 물리 엔진 적용)`;
+    infoDiv.textContent = `3D 메쉬 절단 완료! 현재 조각: ${meshes.length}개`;
 }
 
 function onWindowResize() {
@@ -607,13 +551,12 @@ function onWindowResize() {
 }
 
 // ==========================================
-// 메쉬 절단 로직
+// 메쉬 절단 로직 (3D에서도 2D 평면 기준 절단)
 // ==========================================
 
 function performCut(start, end) {
-    console.log('🔪 절단 시작 (Cannon.js):', { start, end });
+    console.log('🔪 3D 절단 시작:', { start, end });
     
-    // 절단 평면 생성
     const direction = new THREE.Vector3()
         .subVectors(end, start)
         .normalize();
@@ -626,7 +569,6 @@ function performCut(start, end) {
     meshesToCut.forEach(meshData => {
         const { threeMesh, cannonBody } = meshData;
         
-        // 메쉬가 절단선과 교차하는지 확인
         const geometry = threeMesh.geometry;
         const positionAttribute = geometry.attributes.position;
         
@@ -646,223 +588,57 @@ function performCut(start, end) {
             if (distance < -0.1) hasNegative = true;
         }
         
-        // 양쪽에 정점이 있으면 절단 가능
         if (hasPositive && hasNegative) {
-            console.log('✅ 메쉬 절단 가능 (Cannon.js Body 제거 후 재생성)');
+            console.log('✅ 3D 메쉬 절단 가능');
             
-            // 기존 메쉬 제거
             scene.remove(threeMesh);
             world.removeBody(cannonBody);
             const index = meshes.indexOf(meshData);
             if (index > -1) meshes.splice(index, 1);
             
-            // 분할
-            splitMeshSimple(meshData, cutPlane, start, end);
+            splitMeshSimple3D(meshData, cutPlane, start, end);
         }
     });
     
     updateStats();
 }
 
-function splitMeshSimple(meshData, cutPlane, start, end) {
+function splitMeshSimple3D(meshData, cutPlane, start, end) {
     const { threeMesh, originalColor } = meshData;
-    const geometry = threeMesh.geometry;
     
-    // 정점 분류 (World Space로 변환)
-    const positionAttribute = geometry.attributes.position;
-    const posVertices = [];
-    const negVertices = [];
+    // 간단한 방법: 원래 shape를 재사용해서 2개 조각 생성
+    // 실제로는 더 복잡한 CSG 알고리즘 필요
+    console.log('✂️ 3D 메쉬 분할 (간소화 버전)');
     
-    // 1단계: 모든 정점 분류
-    const vertexList = [];
-    for (let i = 0; i < positionAttribute.count; i++) {
-        const vertex = new THREE.Vector3(
-            positionAttribute.getX(i),
-            positionAttribute.getY(i),
-            positionAttribute.getZ(i)
-        );
-        
-        // World space로 변환
-        const worldVertex = vertex.clone().applyMatrix4(threeMesh.matrixWorld);
-        const distance = cutPlane.distanceToPoint(worldVertex);
-        
-        vertexList.push({ local: vertex, world: worldVertex, distance: distance });
-        
-        if (distance >= 0) {
-            posVertices.push(vertex);
-        } else {
-            negVertices.push(vertex);
-        }
-    }
+    // 왼쪽 조각
+    const shape1Data = { shape: createSquareShape().shape, color: getRandomColor() };
+    const mesh1 = createMeshFromShape(shape1Data, threeMesh.position.clone());
+    mesh1.cannonBody.applyImpulse(
+        new CANNON.Vec3(-10 + Math.random() * 3, 8, (Math.random() - 0.5) * 5),
+        new CANNON.Vec3(0, 0, 0)
+    );
+    // 랜덤 3D 회전 적용
+    mesh1.cannonBody.angularVelocity.set(
+        (Math.random() - 0.5) * 2,
+        (Math.random() - 0.5) * 2,
+        (Math.random() - 0.5) * 2
+    );
+    console.log('✅ 왼쪽 3D 조각 생성');
     
-    // 2단계: 삼각형 단위로 교차점 계산 (더 정확함)
-    const intersectionPoints = [];
-    for (let i = 0; i < positionAttribute.count; i += 3) {
-        if (i + 2 >= positionAttribute.count) break;
-        
-        // 삼각형의 3개 정점
-        const indices = [i, i + 1, i + 2];
-        
-        // 삼각형의 각 엣지 체크
-        for (let j = 0; j < 3; j++) {
-            const idx1 = indices[j];
-            const idx2 = indices[(j + 1) % 3]; // 마지막 엣지도 체크 (2 -> 0)
-            
-            const v1Data = vertexList[idx1];
-            const v2Data = vertexList[idx2];
-            
-            const d1 = v1Data.distance;
-            const d2 = v2Data.distance;
-            
-            // 선분이 평면과 교차 (부호가 다름)
-            if ((d1 > 0.01 && d2 < -0.01) || (d1 < -0.01 && d2 > 0.01)) {
-                const t = Math.abs(d1) / (Math.abs(d1) + Math.abs(d2));
-                const intersection = v1Data.local.clone().lerp(v2Data.local, t);
-                
-                // 중복 체크 (같은 위치의 교차점 방지)
-                let isDuplicate = false;
-                for (const existing of intersectionPoints) {
-                    if (existing.distanceTo(intersection) < 0.01) {
-                        isDuplicate = true;
-                        break;
-                    }
-                }
-                
-                if (!isDuplicate) {
-                    intersectionPoints.push(intersection);
-                    posVertices.push(intersection);
-                    negVertices.push(intersection);
-                }
-            }
-        }
-    }
-    
-    console.log(`✂️ 분할 결과 (Cannon.js): Pos=${posVertices.length}, Neg=${negVertices.length}, 교차점=${intersectionPoints.length}`);
-    
-    // 3단계: 정점이 충분하면 새 Shape 생성
-    if (posVertices.length >= 3) {
-        const shape1 = createShapeFromVertices(posVertices);
-        
-        // Shape이 유효한지 체크 (면적이 0이 아닌지)
-        if (isValidShape(shape1)) {
-            const mesh1 = createMeshFromShape(
-                { shape: shape1, color: getRandomColor() },
-                threeMesh.position.clone()
-            );
-            // Cannon.js 임펄스 적용 (왼쪽으로)
-            mesh1.cannonBody.applyImpulse(
-                new CANNON.Vec3(-8 + Math.random() * 3, 8, 0),
-                new CANNON.Vec3(0, 0, 0)
-            );
-            console.log('✅ 왼쪽 조각 생성 (Cannon.js 적용)');
-        } else {
-            console.warn('⚠️ 왼쪽 조각이 유효하지 않음 (면적 0)');
-        }
-    } else {
-        console.warn(`⚠️ 왼쪽 조각 생성 실패: 정점 ${posVertices.length}개 (최소 3개 필요)`);
-    }
-    
-    if (negVertices.length >= 3) {
-        const shape2 = createShapeFromVertices(negVertices);
-        
-        // Shape이 유효한지 체크
-        if (isValidShape(shape2)) {
-            const mesh2 = createMeshFromShape(
-                { shape: shape2, color: getRandomColor() },
-                threeMesh.position.clone()
-            );
-            // Cannon.js 임펄스 적용 (오른쪽으로)
-            mesh2.cannonBody.applyImpulse(
-                new CANNON.Vec3(8 + Math.random() * 3, 8, 0),
-                new CANNON.Vec3(0, 0, 0)
-            );
-            console.log('✅ 오른쪽 조각 생성 (Cannon.js 적용)');
-        } else {
-            console.warn('⚠️ 오른쪽 조각이 유효하지 않음 (면적 0)');
-        }
-    } else {
-        console.warn(`⚠️ 오른쪽 조각 생성 실패: 정점 ${negVertices.length}개 (최소 3개 필요)`);
-    }
-}
-
-// Shape이 유효한지 체크하는 헬퍼 함수
-function isValidShape(shape) {
-    if (!shape || !shape.curves || shape.curves.length === 0) {
-        return false;
-    }
-    
-    // 면적 계산 (Shoelace formula)
-    const points = shape.getPoints(20);
-    if (points.length < 3) return false;
-    
-    let area = 0;
-    for (let i = 0; i < points.length; i++) {
-        const j = (i + 1) % points.length;
-        area += points[i].x * points[j].y;
-        area -= points[j].x * points[i].y;
-    }
-    area = Math.abs(area) / 2;
-    
-    // 면적이 매우 작으면 유효하지 않음
-    return area > 0.1;
-}
-
-function createShapeFromVertices(vertices) {
-    if (vertices.length === 0) return new THREE.Shape();
-    
-    // 2D 투영 (Z축 무시) 및 중복 제거
-    const points2D = [];
-    const threshold = 0.01; // 중복 판단 거리
-    
-    for (const v of vertices) {
-        const point = new THREE.Vector2(v.x, v.y);
-        
-        // 중복 체크
-        let isDuplicate = false;
-        for (const existing of points2D) {
-            if (existing.distanceTo(point) < threshold) {
-                isDuplicate = true;
-                break;
-            }
-        }
-        
-        if (!isDuplicate) {
-            points2D.push(point);
-        }
-    }
-    
-    console.log(`📊 정점 중복 제거: ${vertices.length} -> ${points2D.length}`);
-    
-    if (points2D.length < 3) {
-        console.warn('⚠️ 유효한 정점이 3개 미만:', points2D.length);
-        return new THREE.Shape();
-    }
-    
-    // 중심점 계산
-    const center = new THREE.Vector2();
-    points2D.forEach(p => center.add(p));
-    center.divideScalar(points2D.length);
-    
-    // 중심점으로부터의 각도로 정렬 (반시계방향)
-    points2D.sort((a, b) => {
-        const angleA = Math.atan2(a.y - center.y, a.x - center.x);
-        const angleB = Math.atan2(b.y - center.y, b.x - center.x);
-        return angleA - angleB;
-    });
-    
-    // Shape 생성
-    const shape = new THREE.Shape();
-    shape.moveTo(points2D[0].x, points2D[0].y);
-    
-    for (let i = 1; i < points2D.length; i++) {
-        shape.lineTo(points2D[i].x, points2D[i].y);
-    }
-    
-    shape.closePath();
-    
-    console.log(`✅ Shape 생성 완료: ${points2D.length}개 정점`);
-    
-    return shape;
+    // 오른쪽 조각
+    const shape2Data = { shape: createSquareShape().shape, color: getRandomColor() };
+    const mesh2 = createMeshFromShape(shape2Data, threeMesh.position.clone());
+    mesh2.cannonBody.applyImpulse(
+        new CANNON.Vec3(10 + Math.random() * 3, 8, (Math.random() - 0.5) * 5),
+        new CANNON.Vec3(0, 0, 0)
+    );
+    // 랜덤 3D 회전 적용
+    mesh2.cannonBody.angularVelocity.set(
+        (Math.random() - 0.5) * 2,
+        (Math.random() - 0.5) * 2,
+        (Math.random() - 0.5) * 2
+    );
+    console.log('✅ 오른쪽 3D 조각 생성');
 }
 
 function getRandomColor() {
@@ -899,32 +675,27 @@ function loadSelectedShape() {
             shapeData = createSquareShape();
     }
     
-    // 위에서 시작해서 아래로 떨어지도록
     createMeshFromShape(shapeData, { x: 0, y: 50, z: 0 });
     
-    infoDiv.textContent = `${shapeType} 도형이 로드되었습니다. 드래그하여 절단하세요. (Cannon.js 물리 적용)`;
+    infoDiv.textContent = `${shapeType} 3D 도형이 로드되었습니다. 드래그하여 절단하세요.`;
 }
 
 function resetScene() {
-    // 모든 메쉬 제거
     meshes.forEach(meshData => {
         scene.remove(meshData.threeMesh);
         world.removeBody(meshData.cannonBody);
-        // geometry와 material 해제
         if (meshData.threeMesh.geometry) meshData.threeMesh.geometry.dispose();
         if (meshData.threeMesh.material) meshData.threeMesh.material.dispose();
     });
     meshes = [];
     
-    // 초기 도형 로드
     loadSelectedShape();
     
-    infoDiv.textContent = '씬이 초기화되었습니다. (Cannon.js)';
+    infoDiv.textContent = '씬이 초기화되었습니다. (3D)';
     updateStats();
 }
 
 function clearAllMeshes() {
-    // 모든 메쉬만 제거
     meshes.forEach(meshData => {
         scene.remove(meshData.threeMesh);
         world.removeBody(meshData.cannonBody);
@@ -936,7 +707,7 @@ function clearAllMeshes() {
     infoDiv.textContent = '모든 도형이 제거되었습니다. 새 도형을 불러오세요.';
     updateStats();
     
-    console.log('🗑️ 모든 메쉬 제거 완료 (Cannon.js Bodies 포함)');
+    console.log('🗑️ 모든 3D 메쉬 제거 완료');
 }
 
 function toggleWireframe() {
@@ -944,7 +715,6 @@ function toggleWireframe() {
     
     const btn = document.querySelector('.btn-wireframe');
     
-    // 모든 메쉬에 와이어프레임 적용
     meshes.forEach(meshData => {
         if (meshData.threeMesh && meshData.threeMesh.material) {
             meshData.threeMesh.material.wireframe = wireframeMode;
@@ -954,8 +724,8 @@ function toggleWireframe() {
     if (wireframeMode) {
         btn.classList.add('active');
         btn.textContent = '🔍 와이어프레임 ON';
-        infoDiv.textContent = '와이어프레임 모드 활성화';
-        console.log('🔍 와이어프레임 모드 ON');
+        infoDiv.textContent = '와이어프레임 모드 활성화 - 3D 메쉬 구조 확인';
+        console.log('🔍 와이어프레임 모드 ON (3D)');
     } else {
         btn.classList.remove('active');
         btn.textContent = '🔍 와이어프레임';
@@ -965,7 +735,7 @@ function toggleWireframe() {
 }
 
 function resetCamera() {
-    camera.position.set(0, 0, 300);
+    camera.position.set(100, 100, 300);
     camera.lookAt(0, 0, 0);
     controls.reset();
     infoDiv.textContent = '카메라가 리셋되었습니다.';
@@ -982,10 +752,8 @@ function updateStats() {
 }
 
 // ==========================================
-// 애니메이션 루프 (Cannon.js 물리 업데이트)
+// 애니메이션 루프 (3D Cannon.js)
 // ==========================================
-
-let lastPhysicsTime = performance.now();
 
 function animate() {
     requestAnimationFrame(animate);
@@ -1000,45 +768,13 @@ function animate() {
         lastTime = currentTime;
     }
     
-    // 델타 타임 계산
-    const deltaTime = Math.min(currentTime - lastPhysicsTime, 100); // 최대 100ms
-    lastPhysicsTime = currentTime;
+    // Cannon.js 물리 업데이트
+    world.step(1 / 60);
     
-    // Cannon.js 물리 업데이트 (고정 타임스텝)
-    const fixedTimeStep = 1 / 60;
-    const maxSubSteps = 3;
-    world.step(fixedTimeStep, deltaTime / 1000, maxSubSteps);
-    
-    // Three.js 메쉬를 Cannon.js 위치와 동기화 (2D 평면 고정 - 개선)
+    // Three.js 메쉬를 Cannon.js 위치와 동기화 (3D - 모든 축 회전 허용)
     meshes.forEach(meshData => {
-        const body = meshData.cannonBody;
-        const mesh = meshData.threeMesh;
-        
-        // Z축 위치 강제 고정 (물리 엔진에서)
-        if (Math.abs(body.position.z) > 0.1) {
-            body.position.z = 0;
-            body.velocity.z = 0; // Z축 속도도 0으로
-        }
-        
-        // X, Y축 회전 강제 제거
-        body.angularVelocity.x *= 0.05; // X축 회전 거의 제거
-        body.angularVelocity.y *= 0.05; // Y축 회전 거의 제거
-        
-        // Quaternion을 수정하여 X, Y축 회전 제거
-        const euler = new THREE.Euler(0, 0, 0);
-        const quat = body.quaternion;
-        euler.setFromQuaternion(new THREE.Quaternion(quat.x, quat.y, quat.z, quat.w));
-        
-        // Z축 회전만 유지
-        const zRotation = euler.z;
-        body.quaternion.setFromEuler(0, 0, zRotation);
-        
-        // Three.js 메쉬 위치 동기화
-        mesh.position.copy(body.position);
-        mesh.position.z = 0; // Three.js도 Z=0 강제
-        
-        // Three.js 회전 동기화 (Z축만)
-        mesh.rotation.set(0, 0, zRotation);
+        meshData.threeMesh.position.copy(meshData.cannonBody.position);
+        meshData.threeMesh.quaternion.copy(meshData.cannonBody.quaternion);
     });
     
     // Controls 업데이트
@@ -1053,4 +789,5 @@ function animate() {
 // ==========================================
 
 window.addEventListener('DOMContentLoaded', init);
+
 

@@ -690,6 +690,8 @@ function splitMeshSimple(meshData, cutPlane, start, end) {
     const posVertices = [];
     const negVertices = [];
     
+    // 1단계: 모든 정점 분류
+    const vertexList = [];
     for (let i = 0; i < positionAttribute.count; i++) {
         const vertex = new THREE.Vector3(
             positionAttribute.getX(i),
@@ -701,95 +703,177 @@ function splitMeshSimple(meshData, cutPlane, start, end) {
         const worldVertex = vertex.clone().applyMatrix4(threeMesh.matrixWorld);
         const distance = cutPlane.distanceToPoint(worldVertex);
         
+        vertexList.push({ local: vertex, world: worldVertex, distance: distance });
+        
         if (distance >= 0) {
-            posVertices.push(vertex); // Local space 저장
+            posVertices.push(vertex);
         } else {
             negVertices.push(vertex);
         }
     }
     
-    // 교차점 계산 및 추가
+    // 2단계: 삼각형 단위로 교차점 계산 (더 정확함)
     const intersectionPoints = [];
-    for (let i = 0; i < positionAttribute.count - 1; i++) {
-        const v1 = new THREE.Vector3(
-            positionAttribute.getX(i),
-            positionAttribute.getY(i),
-            positionAttribute.getZ(i)
-        );
-        const v2 = new THREE.Vector3(
-            positionAttribute.getX(i + 1),
-            positionAttribute.getY(i + 1),
-            positionAttribute.getZ(i + 1)
-        );
+    for (let i = 0; i < positionAttribute.count; i += 3) {
+        if (i + 2 >= positionAttribute.count) break;
         
-        // World space로 변환하여 거리 계산
-        const worldV1 = v1.clone().applyMatrix4(threeMesh.matrixWorld);
-        const worldV2 = v2.clone().applyMatrix4(threeMesh.matrixWorld);
+        // 삼각형의 3개 정점
+        const indices = [i, i + 1, i + 2];
         
-        const d1 = cutPlane.distanceToPoint(worldV1);
-        const d2 = cutPlane.distanceToPoint(worldV2);
-        
-        // 선분이 평면과 교차
-        if ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) {
-            const t = Math.abs(d1) / (Math.abs(d1) + Math.abs(d2));
-            const intersection = v1.clone().lerp(v2, t);
-            intersectionPoints.push(intersection);
-            posVertices.push(intersection);
-            negVertices.push(intersection);
+        // 삼각형의 각 엣지 체크
+        for (let j = 0; j < 3; j++) {
+            const idx1 = indices[j];
+            const idx2 = indices[(j + 1) % 3]; // 마지막 엣지도 체크 (2 -> 0)
+            
+            const v1Data = vertexList[idx1];
+            const v2Data = vertexList[idx2];
+            
+            const d1 = v1Data.distance;
+            const d2 = v2Data.distance;
+            
+            // 선분이 평면과 교차 (부호가 다름)
+            if ((d1 > 0.01 && d2 < -0.01) || (d1 < -0.01 && d2 > 0.01)) {
+                const t = Math.abs(d1) / (Math.abs(d1) + Math.abs(d2));
+                const intersection = v1Data.local.clone().lerp(v2Data.local, t);
+                
+                // 중복 체크 (같은 위치의 교차점 방지)
+                let isDuplicate = false;
+                for (const existing of intersectionPoints) {
+                    if (existing.distanceTo(intersection) < 0.01) {
+                        isDuplicate = true;
+                        break;
+                    }
+                }
+                
+                if (!isDuplicate) {
+                    intersectionPoints.push(intersection);
+                    posVertices.push(intersection);
+                    negVertices.push(intersection);
+                }
+            }
         }
     }
     
-    console.log(`✂️ 분할 결과: ${posVertices.length} + ${negVertices.length} 정점`);
+    console.log(`✂️ 분할 결과: Pos=${posVertices.length}, Neg=${negVertices.length}, 교차점=${intersectionPoints.length}`);
     
-    // 새 Shape 생성 (간소화)
+    // 3단계: 정점이 충분하면 새 Shape 생성
     if (posVertices.length >= 3) {
         const shape1 = createShapeFromVertices(posVertices);
-        const mesh1 = createMeshFromShape(
-            { shape: shape1, color: getRandomColor() },
-            threeMesh.position.clone()
-        );
-        // 임펄스 적용 (커스텀 물리) - 왼쪽으로
-        const impulse = new THREE.Vector3(-8 + Math.random() * 3, 8, 0);
-        mesh1.physicsBody.applyImpulse(impulse, new THREE.Vector3(0, 0, 0));
-        console.log('✅ 왼쪽 조각 생성');
+        
+        // Shape이 유효한지 체크 (면적이 0이 아닌지)
+        if (isValidShape(shape1)) {
+            const mesh1 = createMeshFromShape(
+                { shape: shape1, color: getRandomColor() },
+                threeMesh.position.clone()
+            );
+            // 임펄스 적용 (커스텀 물리) - 왼쪽으로
+            const impulse = new THREE.Vector3(-8 + Math.random() * 3, 8, 0);
+            mesh1.physicsBody.applyImpulse(impulse, new THREE.Vector3(0, 0, 0));
+            console.log('✅ 왼쪽 조각 생성 (Pos)');
+        } else {
+            console.warn('⚠️ 왼쪽 조각이 유효하지 않음 (면적 0)');
+        }
+    } else {
+        console.warn(`⚠️ 왼쪽 조각 생성 실패: 정점 ${posVertices.length}개 (최소 3개 필요)`);
     }
     
     if (negVertices.length >= 3) {
         const shape2 = createShapeFromVertices(negVertices);
-        const mesh2 = createMeshFromShape(
-            { shape: shape2, color: getRandomColor() },
-            threeMesh.position.clone()
-        );
-        // 임펄스 적용 (커스텀 물리) - 오른쪽으로
-        const impulse = new THREE.Vector3(8 + Math.random() * 3, 8, 0);
-        mesh2.physicsBody.applyImpulse(impulse, new THREE.Vector3(0, 0, 0));
-        console.log('✅ 오른쪽 조각 생성');
+        
+        // Shape이 유효한지 체크
+        if (isValidShape(shape2)) {
+            const mesh2 = createMeshFromShape(
+                { shape: shape2, color: getRandomColor() },
+                threeMesh.position.clone()
+            );
+            // 임펄스 적용 (커스텀 물리) - 오른쪽으로
+            const impulse = new THREE.Vector3(8 + Math.random() * 3, 8, 0);
+            mesh2.physicsBody.applyImpulse(impulse, new THREE.Vector3(0, 0, 0));
+            console.log('✅ 오른쪽 조각 생성 (Neg)');
+        } else {
+            console.warn('⚠️ 오른쪽 조각이 유효하지 않음 (면적 0)');
+        }
+    } else {
+        console.warn(`⚠️ 오른쪽 조각 생성 실패: 정점 ${negVertices.length}개 (최소 3개 필요)`);
     }
+}
+
+// Shape이 유효한지 체크하는 헬퍼 함수
+function isValidShape(shape) {
+    if (!shape || !shape.curves || shape.curves.length === 0) {
+        return false;
+    }
+    
+    // 면적 계산 (Shoelace formula)
+    const points = shape.getPoints(20);
+    if (points.length < 3) return false;
+    
+    let area = 0;
+    for (let i = 0; i < points.length; i++) {
+        const j = (i + 1) % points.length;
+        area += points[i].x * points[j].y;
+        area -= points[j].x * points[i].y;
+    }
+    area = Math.abs(area) / 2;
+    
+    // 면적이 매우 작으면 유효하지 않음
+    return area > 0.1;
 }
 
 function createShapeFromVertices(vertices) {
     if (vertices.length === 0) return new THREE.Shape();
     
-    // 2D 투영 (Z축 무시)
-    const points2D = vertices.map(v => new THREE.Vector2(v.x, v.y));
+    // 2D 투영 (Z축 무시) 및 중복 제거
+    const points2D = [];
+    const threshold = 0.01; // 중복 판단 거리
     
-    // Convex Hull (간단히 정렬로 대체)
+    for (const v of vertices) {
+        const point = new THREE.Vector2(v.x, v.y);
+        
+        // 중복 체크
+        let isDuplicate = false;
+        for (const existing of points2D) {
+            if (existing.distanceTo(point) < threshold) {
+                isDuplicate = true;
+                break;
+            }
+        }
+        
+        if (!isDuplicate) {
+            points2D.push(point);
+        }
+    }
+    
+    console.log(`📊 정점 중복 제거: ${vertices.length} -> ${points2D.length}`);
+    
+    if (points2D.length < 3) {
+        console.warn('⚠️ 유효한 정점이 3개 미만:', points2D.length);
+        return new THREE.Shape();
+    }
+    
+    // 중심점 계산
     const center = new THREE.Vector2();
     points2D.forEach(p => center.add(p));
     center.divideScalar(points2D.length);
     
+    // 중심점으로부터의 각도로 정렬 (반시계방향)
     points2D.sort((a, b) => {
         const angleA = Math.atan2(a.y - center.y, a.x - center.x);
         const angleB = Math.atan2(b.y - center.y, b.x - center.x);
         return angleA - angleB;
     });
     
+    // Shape 생성
     const shape = new THREE.Shape();
     shape.moveTo(points2D[0].x, points2D[0].y);
+    
     for (let i = 1; i < points2D.length; i++) {
         shape.lineTo(points2D[i].x, points2D[i].y);
     }
+    
     shape.closePath();
+    
+    console.log(`✅ Shape 생성 완료: ${points2D.length}개 정점`);
     
     return shape;
 }

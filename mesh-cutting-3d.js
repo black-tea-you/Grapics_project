@@ -350,6 +350,57 @@ function createCircleShape() {
     return { shape, color: 0xF38181 };
 }
 
+function createHamShape() {
+    // wholer-ham.obj 파일에서 추출한 정점 데이터 (X, Y만 사용, Z는 무시)
+    const vertices = [
+        [0.150075, 0.053076], [0.159746, 0.161643], [0.170540, 0.282820],
+        [-0.159746, 0.161642], [-0.150075, 0.053076], [-0.170540, 0.282820],
+        [-0.043442, -0.109783], [-0.088253, -0.109783], [-0.023418, -0.109783],
+        [0.088253, -0.109783], [0.043442, -0.109783], [0.023418, -0.109783],
+        [-0.151386, 0.334710], [-0.136432, 0.375220], [0.151386, 0.334710],
+        [0.136432, 0.375220], [-0.002096, 0.436820], [0.068216, 0.436820],
+        [-0.068216, 0.436820], [-0.090272, 0.416903], [0.090272, 0.416903],
+        [-0.111386, -0.048844], [0.111386, -0.048844], [-0.095480, -0.127979],
+        [-0.104139, -0.149783], [0.104139, -0.149783], [0.095480, -0.127979],
+        [0.081779, -0.370580], [0.064632, -0.346575], [0.030736, -0.299120],
+        [-0.026537, -0.190481], [-0.030736, -0.299120], [0.033930, -0.368577],
+        [0.051043, -0.392534], [0.000000, -0.321074], [0.026537, -0.190481],
+        [-0.064632, -0.346575], [-0.081778, -0.370580], [-0.051043, -0.392534],
+        [-0.033930, -0.368577], [-0.066340, -0.381607], [0.066340, -0.381607]
+    ];
+
+    // 중심 계산
+    const center = [0, 0];
+    vertices.forEach(v => {
+        center[0] += v[0];
+        center[1] += v[1];
+    });
+    center[0] /= vertices.length;
+    center[1] /= vertices.length;
+
+    // 각도 기준으로 정렬 (외곽선 생성)
+    const sortedVertices = vertices.slice().sort((a, b) => {
+        const angleA = Math.atan2(a[1] - center[1], a[0] - center[0]);
+        const angleB = Math.atan2(b[1] - center[1], b[0] - center[0]);
+        return angleA - angleB;
+    });
+
+    // 스케일 조정 (크기를 다른 도형과 비슷하게)
+    const scale = 200;
+    
+    const shape = new THREE.Shape();
+    const firstPoint = sortedVertices[0];
+    shape.moveTo(firstPoint[0] * scale, firstPoint[1] * scale);
+    
+    for (let i = 1; i < sortedVertices.length; i++) {
+        shape.lineTo(sortedVertices[i][0] * scale, sortedVertices[i][1] * scale);
+    }
+    
+    shape.closePath();
+    
+    return { shape, color: 0xFFA07A }; // 연한 살구색 (햄 색상)
+}
+
 // ==========================================
 // 3D 메쉬 생성 (ExtrudeGeometry 사용!)
 // ==========================================
@@ -670,6 +721,9 @@ function loadSelectedShape() {
             break;
         case 'circle':
             shapeData = createCircleShape();
+            break;
+        case 'ham':
+            shapeData = createHamShape();
             break;
         default:
             shapeData = createSquareShape();

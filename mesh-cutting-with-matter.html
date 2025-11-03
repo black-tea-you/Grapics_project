@@ -294,16 +294,18 @@
         <div class="instructions">
             <h3>🎮 사용 방법 (완벽한 2D!):</h3>
             <ol>
-                <li>✏️ <strong>캔버스 어디서든</strong> 마우스를 드래그하여 절단선을 그으세요</li>
+                <li>✏️ <strong>좌클릭 드래그</strong>로 절단선을 그으세요</li>
+                <li>🖱️ <strong>우클릭 드래그</strong>로 카메라를 이동할 수 있습니다</li>
+                <li>🔍 <strong>마우스 휠</strong>로 줌 인/아웃</li>
                 <li>🎯 정확한 2D 평면에서 절단 (카메라 각도 걱정 없음!)</li>
                 <li>📏 시작점과 끝점을 잇는 직선을 기준으로 메쉬가 분할됩니다</li>
                 <li>🌟 녹색(시작) → 빨간색(끝) 점으로 절단선 표시</li>
                 <li>💥 분할된 메쉬는 Matter.js 2D 물리로 자연스럽게 날아갑니다</li>
-                <li>🔄 마우스 휠로 줌 (패닝은 고정 - 완벽한 2D 유지)</li>
             </ol>
             <p style="margin-top: 10px; font-size: 12px; color: #666;">
                 🚀 <strong>Matter.js 2D 물리 엔진:</strong> 정확한 2D 중력, 충돌, 반발!<br>
-                📐 <strong>완벽한 2D 환경:</strong> Z축 걱정 없는 진짜 2D 평면!
+                📐 <strong>완벽한 2D 환경:</strong> Z축 걱정 없는 진짜 2D 평면!<br>
+                🖱️ <strong>카메라 조작:</strong> 우클릭 드래그로 이동, 휠로 줌!
             </p>
         </div>
 
@@ -316,7 +318,28 @@
                 <option value="square">🟦 사각형</option>
                 <option value="pentagon">⬟ 오각형</option>
                 <option value="circle">⭕ 원</option>
+                <option value="custom">📁 사용자 OBJ 파일</option>
             </select>
+        </div>
+
+        <div class="shape-selector" id="customObjSection" style="display: none; margin-top: 15px; padding: 15px; background: #f0f8ff; border-radius: 8px; border: 2px dashed #4facfe;">
+            <h4 style="margin: 0 0 10px 0; color: #4facfe;">📁 사용자 OBJ 파일 업로드</h4>
+            <div style="margin-bottom: 10px;">
+                <label for="objFile" style="display: block; margin-bottom: 5px; font-weight: 600;">🔷 OBJ 파일:</label>
+                <input type="file" id="objFile" accept=".obj" style="padding: 5px; width: 100%;">
+            </div>
+            <div style="margin-bottom: 10px;">
+                <label for="textureFile" style="display: block; margin-bottom: 5px; font-weight: 600;">🎨 텍스처 파일 (선택):</label>
+                <input type="file" id="textureFile" accept=".png,.jpg,.jpeg" style="padding: 5px; width: 100%;">
+            </div>
+            <div style="margin-bottom: 10px;">
+                <label for="objScale" style="display: block; margin-bottom: 5px; font-weight: 600;">📏 크기 조절:</label>
+                <input type="range" id="objScale" min="50" max="500" value="200" step="10" style="width: 80%;">
+                <span id="scaleValue" style="margin-left: 10px; font-weight: bold;">200</span>
+            </div>
+            <p style="margin: 10px 0 0 0; font-size: 12px; color: #666;">
+                💡 OBJ 파일을 선택하고 "도형 불러오기" 버튼을 클릭하세요.
+            </p>
         </div>
 
         <div class="shape-selector" style="margin-top: 15px;">
@@ -387,6 +410,9 @@
 
     <!-- Three.js 라이브러리 (CDN) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" onerror="console.error('Three.js 로드 실패:', this.src)"></script>
+    
+    <!-- OBJLoader (CDN) -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js" onerror="console.error('OBJLoader 로드 실패:', this.src)"></script>
     
     <!-- Matter.js 물리 엔진 (CDN) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js" onerror="console.error('Matter.js 로드 실패:', this.src)"></script>

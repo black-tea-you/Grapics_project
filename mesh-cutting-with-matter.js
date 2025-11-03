@@ -24,6 +24,18 @@ let startPoint = null;
 let endPoint = null;
 let cutLineHelper = null;
 
+// 카메라 팬(이동) 변수
+let isPanning = false;
+let panStartMouse = { x: 0, y: 0 };
+let panStartCamera = { x: 0, y: 0 };
+
+// 사용자 OBJ 파일 변수
+let customObjData = {
+    objFile: null,
+    textureFile: null,
+    scale: 200
+};
+
 // 와이어프레임 모드
 let wireframeMode = false;
 
@@ -45,8 +57,10 @@ const Z_OFFSET = 0.01;
 let particles = [];
 
 // 디버그 시각화
-let debugMode = true; // 물리 충돌 영역 표시
+let debugMode = false; // 물리 충돌 영역 표시 (기본값: OFF로 성능 향상)
 let debugLines = []; // 물리 바디 시각화 라인들
+let lastDebugUpdate = 0; // 마지막 디버그 업데이트 시간
+const DEBUG_UPDATE_INTERVAL = 100; // 디버그 업데이트 간격 (ms) - 0.1초마다
 
 // 물리 정점 품질 설정
 let maxVertexCount = 80; // 기본값: 80개 (빠름)
@@ -67,7 +81,7 @@ function init() {
     debugLogDiv = document.getElementById('debugLog');
     debugLogContent = document.getElementById('debugLogContent');
     setupDebugLog();
-    
+
     console.log('🚀 Three.js + Matter.js 2D 초기화 시작...');
     const initStartTime = performance.now();
 
@@ -99,7 +113,7 @@ function init() {
         antialias: true,
         alpha: false
     });
-    
+
     renderer.setSize(viewWidth, viewHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
@@ -144,18 +158,16 @@ function init() {
 // ==========================================
 
 function setupLights() {
-    // Ambient Light
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+    // Ambient Light (더 밝게: 0.7 → 0.9)
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
     scene.add(ambientLight);
 
-    // Directional Light (2D에서는 그림자 불필요)
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
-    dirLight.position.set(50, 50, 100);
+    // Directional Light (더 밝게: 0.5 → 0.8)
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(0, 0, 100); // 정면에서 비춤 (텍스처 명확하게)
     scene.add(dirLight);
 
-    // Hemisphere Light
-    const hemiLight = new THREE.HemisphereLight(0x4facfe, 0x00f2fe, 0.3);
-    scene.add(hemiLight);
+    console.log('💡 조명 설정 완료 (텍스처 표시 최적화)');
 }
 
 // ==========================================
@@ -174,11 +186,11 @@ function setupPhysics() {
     world.gravity.y = 1; // 적절한 2D 중력 (아래 방향)
 
     // 충돌 이벤트 리스너 (디버그용)
-    Matter.Events.on(engine, 'collisionStart', function(event) {
+    Matter.Events.on(engine, 'collisionStart', function (event) {
         event.pairs.forEach(pair => {
             const labelA = pair.bodyA.label;
             const labelB = pair.bodyB.label;
-            
+
             // 벽과의 충돌 감지
             if (labelA.includes('wall') || labelB.includes('wall')) {
                 console.log(`🧱 충돌 감지: ${labelA} ↔ ${labelB}`);
@@ -195,19 +207,19 @@ function setupPhysics() {
 
 function createBoundaryWalls() {
     console.log('🧱 캔버스 경계 벽 생성 시작...');
-    
+
     // OrthographicCamera 범위 계산
     const aspect = viewWidth / viewHeight;
     const frustumSize = 400;
     const halfWidth = (frustumSize * aspect) / 2;  // 좌우 범위
     const halfHeight = frustumSize / 2;             // 상하 범위
-    
+
     const wallThickness = 50; // 벽 두께
     const wallColor = 0x2c3e50; // 벽 색상
-    
+
     // 🎯 바닥 숨김 오프셋 (시각적으로는 보이지만 물리적으로는 아래에)
-    const bottomVisualOffset = 40; // 바닥을 위로 40px 올림 (15px → 40px 증가)
-    
+    const bottomVisualOffset = 5; // 바닥을 위로 5px만 올림 (40px → 5px로 감소)
+
     // 벽 설정 (Matter.js 좌표: Y축 아래가 양수)
     const wallConfigs = [
         {
@@ -243,11 +255,11 @@ function createBoundaryWalls() {
             height: halfHeight * 2 + wallThickness * 2
         }
     ];
-    
+
     wallConfigs.forEach(config => {
         // Three.js 벽 (시각적) - 제거됨 (물리만 유지)
         // 도형이 가려지지 않도록 시각적 메쉬는 생성하지 않음
-        
+
         // Matter.js 벽 (물리적) - 원래 y 위치 사용
         const wallBody = Matter.Bodies.rectangle(
             config.x,
@@ -263,17 +275,17 @@ function createBoundaryWalls() {
         );
         Matter.World.add(world, wallBody);
         walls.push({ mesh: null, body: wallBody, name: config.name }); // mesh는 null
-        
-        const offsetInfo = config.name === 'bottom' 
-            ? ` (시각 오프셋: ${bottomVisualOffset}px)` 
+
+        const offsetInfo = config.name === 'bottom'
+            ? ` (시각 오프셋: ${bottomVisualOffset}px)`
             : '';
         console.log(`  ✅ ${config.name} 벽 생성 (${config.width}x${config.height})${offsetInfo}`);
     });
-    
+
     console.log(`🧱 캔버스 경계 벽 생성 완료 (4면)`);
     console.log(`📐 캔버스 범위: ${halfWidth * 2}x${halfHeight * 2}`);
     console.log(`🎯 바닥 숨김: 시각적으로 ${bottomVisualOffset}px 위로 이동`);
-    
+
     // 그리드 헬퍼 (바닥 참고용)
     const gridHelper = new THREE.GridHelper(halfWidth * 2, 40, 0x4facfe, 0x444444);
     gridHelper.rotation.x = Math.PI / 2;
@@ -426,27 +438,150 @@ function createCircleShape() {
     return { shape, color: 0xF38181 };
 }
 
-//햄 도형 생성
-function createHamShape() {
-    // wholer-ham.obj 파일에서 추출한 정점 데이터 (X, Y만 사용, Z는 무시)
-    const vertices = [
-        [0.150075, 0.053076], [0.159746, 0.161643], [0.170540, 0.282820],
-        [-0.159746, 0.161642], [-0.150075, 0.053076], [-0.170540, 0.282820],
-        [-0.043442, -0.109783], [-0.088253, -0.109783], [-0.023418, -0.109783],
-        [0.088253, -0.109783], [0.043442, -0.109783], [0.023418, -0.109783],
-        [-0.151386, 0.334710], [-0.136432, 0.375220], [0.151386, 0.334710],
-        [0.136432, 0.375220], [-0.002096, 0.436820], [0.068216, 0.436820],
-        [-0.068216, 0.436820], [-0.090272, 0.416903], [0.090272, 0.416903],
-        [-0.111386, -0.048844], [0.111386, -0.048844], [-0.095480, -0.127979],
-        [-0.104139, -0.149783], [0.104139, -0.149783], [0.095480, -0.127979],
-        [0.081779, -0.370580], [0.064632, -0.346575], [0.030736, -0.299120],
-        [-0.026537, -0.190481], [-0.030736, -0.299120], [0.033930, -0.368577],
-        [0.051043, -0.392534], [0.000000, -0.321074], [0.026537, -0.190481],
-        [-0.064632, -0.346575], [-0.081778, -0.370580], [-0.051043, -0.392534],
-        [-0.033930, -0.368577], [-0.066340, -0.381607], [0.066340, -0.381607]
-    ];
+// 사용자 OBJ 파일 로드
+function createCustomObjShape() {
+    return new Promise((resolve, reject) => {
+        if (!customObjData.objFile) {
+            reject('OBJ 파일이 선택되지 않았습니다');
+            return;
+        }
+        
+        const reader = new FileReader();
+        
+        reader.onload = (e) => {
+            const objContent = e.target.result;
+            const objLoader = new THREE.OBJLoader();
+            
+            console.log('📦 사용자 OBJ 파일 파싱 시작:', customObjData.objFile.name);
+            
+            try {
+                const object = objLoader.parse(objContent);
+                processObjToShape(object, customObjData.scale, customObjData.textureFile, resolve, reject);
+            } catch (error) {
+                console.error('❌ OBJ 파일 파싱 실패:', error);
+                reject(error);
+            }
+        };
+        
+        reader.onerror = (error) => {
+            console.error('❌ 파일 읽기 실패:', error);
+            reject(error);
+        };
+        
+        reader.readAsText(customObjData.objFile);
+    });
+}
 
-    // 중심 계산?
+//햄 도형 생성 (OBJ 파일에서 로드)
+function createHamShape() {
+    // 동기 방식 대신 Promise 반환
+    return new Promise((resolve, reject) => {
+        const objLoader = new THREE.OBJLoader();
+        
+        console.log('📦 OBJ 파일 로딩 시작: prefab/wholer-ham.obj');
+        
+        objLoader.load(
+            'prefab/wholer-ham.obj',
+            (object) => {
+                console.log('✅ OBJ 파일 로드 성공!');
+                processObjToShape(object, 200, null, resolve, reject, 'Textures/colormap.png');
+            },
+            (progress) => {
+                console.log(`📥 로딩 중: ${(progress.loaded / progress.total * 100).toFixed(0)}%`);
+            },
+            (error) => {
+                console.error('❌ OBJ 파일 로드 실패:', error);
+                reject(error);
+            }
+        );
+    });
+}
+
+// OBJ 객체를 Shape로 변환 (공통 함수)
+function processObjToShape(object, scale, textureFile, resolve, reject, defaultTexture = null) {
+    // 첫 번째 메쉬 가져오기
+    let mesh = null;
+    object.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+            mesh = child;
+        }
+    });
+    
+    if (!mesh || !mesh.geometry) {
+        console.error('❌ OBJ 파일에서 메쉬를 찾을 수 없습니다');
+        reject('메쉬 없음');
+        return;
+    }
+    
+    const geometry = mesh.geometry;
+    const positionAttribute = geometry.attributes.position;
+    const uvAttribute = geometry.attributes.uv;
+    
+    console.log(`📊 정점 수: ${positionAttribute.count}`);
+    console.log(`🎨 UV 좌표: ${uvAttribute ? 'O' : 'X'}`);
+    
+    // 🎯 Bounding Box 계산해서 가장 얇은 축 찾기
+    const minBounds = { x: Infinity, y: Infinity, z: Infinity };
+    const maxBounds = { x: -Infinity, y: -Infinity, z: -Infinity };
+    
+    for (let i = 0; i < positionAttribute.count; i++) {
+        const x = positionAttribute.getX(i);
+        const y = positionAttribute.getY(i);
+        const z = positionAttribute.getZ(i);
+        
+        minBounds.x = Math.min(minBounds.x, x);
+        minBounds.y = Math.min(minBounds.y, y);
+        minBounds.z = Math.min(minBounds.z, z);
+        
+        maxBounds.x = Math.max(maxBounds.x, x);
+        maxBounds.y = Math.max(maxBounds.y, y);
+        maxBounds.z = Math.max(maxBounds.z, z);
+    }
+    
+    const sizeX = maxBounds.x - minBounds.x;
+    const sizeY = maxBounds.y - minBounds.y;
+    const sizeZ = maxBounds.z - minBounds.z;
+    
+    console.log(`📏 BoundingBox 크기: X=${sizeX.toFixed(4)}, Y=${sizeY.toFixed(4)}, Z=${sizeZ.toFixed(4)}`);
+    
+    // 가장 얇은 축 찾기 (이게 "두께" 축)
+    let thinAxis, axis1, axis2;
+    let getAxis1, getAxis2;
+    
+    if (sizeX <= sizeY && sizeX <= sizeZ) {
+        // X축이 가장 얇음 → YZ 평면 사용
+        thinAxis = 'X';
+        axis1 = 'Y';
+        axis2 = 'Z';
+        getAxis1 = (i) => positionAttribute.getY(i);
+        getAxis2 = (i) => positionAttribute.getZ(i);
+    } else if (sizeY <= sizeX && sizeY <= sizeZ) {
+        // Y축이 가장 얇음 → XZ 평면 사용 (와플의 경우)
+        thinAxis = 'Y';
+        axis1 = 'X';
+        axis2 = 'Z';
+        getAxis1 = (i) => positionAttribute.getX(i);
+        getAxis2 = (i) => positionAttribute.getZ(i);
+    } else {
+        // Z축이 가장 얇음 → XY 평면 사용
+        thinAxis = 'Z';
+        axis1 = 'X';
+        axis2 = 'Y';
+        getAxis1 = (i) => positionAttribute.getX(i);
+        getAxis2 = (i) => positionAttribute.getY(i);
+    }
+    
+    console.log(`🎯 2D 투영: ${thinAxis}축 무시, ${axis1}-${axis2} 평면 사용`);
+    
+    // 선택된 평면으로 2D 투영
+    const vertices = [];
+    for (let i = 0; i < positionAttribute.count; i++) {
+        const v1 = getAxis1(i);
+        const v2 = getAxis2(i);
+        vertices.push([v1, v2]);
+    }
+    
+    // 중심 계산
     const center = [0, 0];
     vertices.forEach(v => {
         center[0] += v[0];
@@ -454,28 +589,272 @@ function createHamShape() {
     });
     center[0] /= vertices.length;
     center[1] /= vertices.length;
-
-    // 각도 기준으로 정렬 (외곽선 생성)
-    const sortedVertices = vertices.slice().sort((a, b) => {
-        const angleA = Math.atan2(a[1] - center[1], a[0] - center[0]);
-        const angleB = Math.atan2(b[1] - center[1], b[0] - center[0]);
-        return angleA - angleB;
-    });
-
-    // 스케일 조정 (크기를 다른 도형과 비슷하게)
-    const scale = 200;
     
+    console.log(`📍 중심점: (${center[0].toFixed(3)}, ${center[1].toFixed(3)})`);
+    
+    // 🎯 Concave Hull 알고리즘으로 실제 외곽선 추출 (홈 포함)
+    console.log(`🔧 Concave Hull 계산 시작... (${vertices.length}개 정점)`);
+    const hullVertices = computeConcaveHull(vertices, 0.05); // alpha = 0.05 (민감도)
+    console.log(`✅ Concave Hull 완료: ${vertices.length}개 → ${hullVertices.length}개 (오목한 부분 포함)`);
+    
+    const uniqueVertices = hullVertices;
+    
+    // Shape 생성
     const shape = new THREE.Shape();
-    const firstPoint = sortedVertices[0];
+    const firstPoint = uniqueVertices[0];
     shape.moveTo(firstPoint[0] * scale, firstPoint[1] * scale);
     
-    for (let i = 1; i < sortedVertices.length; i++) {
-        shape.lineTo(sortedVertices[i][0] * scale, sortedVertices[i][1] * scale);
+    for (let i = 1; i < uniqueVertices.length; i++) {
+        shape.lineTo(uniqueVertices[i][0] * scale, uniqueVertices[i][1] * scale);
     }
     
     shape.closePath();
     
-    return { shape, color: 0xFFA07A }; // 연한 살구색 (햄 색상)
+    console.log('✅ Shape 생성 완료!');
+    
+    // 🎨 OBJ의 원본 UV 좌표 범위 분석
+    let uvBounds = null;
+    if (uvAttribute) {
+        const minU = Math.min(...Array.from({length: uvAttribute.count}, (_, i) => uvAttribute.getX(i)));
+        const maxU = Math.max(...Array.from({length: uvAttribute.count}, (_, i) => uvAttribute.getX(i)));
+        const minV = Math.min(...Array.from({length: uvAttribute.count}, (_, i) => uvAttribute.getY(i)));
+        const maxV = Math.max(...Array.from({length: uvAttribute.count}, (_, i) => uvAttribute.getY(i)));
+        
+        uvBounds = { minU, maxU, minV, maxV };
+        console.log(`🎨 원본 UV 범위: U[${minU.toFixed(3)}, ${maxU.toFixed(3)}], V[${minV.toFixed(3)}, ${maxV.toFixed(3)}]`);
+        console.log(`   사용 영역: ${((maxU - minU) * 100).toFixed(1)}% x ${((maxV - minV) * 100).toFixed(1)}%`);
+    }
+    
+    // 텍스처 처리
+    let textureUrl = defaultTexture;
+    if (textureFile) {
+        // 사용자가 업로드한 텍스처 파일을 URL로 변환
+        textureUrl = URL.createObjectURL(textureFile);
+        console.log('🎨 사용자 텍스처 사용:', textureFile.name);
+    }
+    
+    resolve({ 
+        shape, 
+        color: 0xFFA07A, // 연한 살구색 (텍스처 없을 때 사용)
+        texture: textureUrl,
+        uvBounds: uvBounds // UV 범위 정보 전달
+    });
+}
+
+/**
+ * Concave Hull (오목 껍질) 알고리즘 - 실제 외곽선 추출
+ * 오목한 부분(홈)을 포함한 외곽선 생성
+ * @param {Array} points - [[x, y], [x, y], ...] 형태의 정점 배열
+ * @param {number} alpha - 민감도 (0.01~0.1, 작을수록 자세함)
+ * @returns {Array} - 외곽선 정점들
+ */
+function computeConcaveHull(points, alpha = 0.05) {
+    if (points.length < 3) return points;
+    
+    // 1. 중복 제거
+    const uniquePoints = [];
+    const seen = new Set();
+    for (const p of points) {
+        const key = `${p[0].toFixed(6)},${p[1].toFixed(6)}`;
+        if (!seen.has(key)) {
+            seen.add(key);
+            uniquePoints.push(p);
+        }
+    }
+    
+    if (uniquePoints.length < 3) return uniquePoints;
+    
+    console.log(`  🔧 중복 제거: ${points.length} → ${uniquePoints.length}개`);
+    
+    // 2. Boundary Detection: 외곽에 있는 점들만 찾기
+    // 각 점에서 가장 가까운 이웃까지의 평균 거리 계산
+    const avgDist = computeAverageNearestNeighborDistance(uniquePoints);
+    const maxDist = avgDist * (1 / alpha); // alpha가 작을수록 더 많은 디테일
+    
+    console.log(`  📏 평균 거리: ${avgDist.toFixed(6)}, 최대 거리: ${maxDist.toFixed(6)}`);
+    
+    // 3. 시작점 찾기 (가장 왼쪽 아래 점)
+    let start = uniquePoints[0];
+    for (const p of uniquePoints) {
+        if (p[1] < start[1] || (p[1] === start[1] && p[0] < start[0])) {
+            start = p;
+        }
+    }
+    
+    // 4. 외곽선 추적
+    const hull = [start];
+    const used = new Set([`${start[0]},${start[1]}`]);
+    let current = start;
+    let angle = 0; // 시작 각도
+    
+    let iterations = 0;
+    const maxIterations = uniquePoints.length * 2;
+    
+    while (iterations < maxIterations) {
+        iterations++;
+        
+        // 현재 점에서 가장 가까우면서 외곽 방향인 다음 점 찾기
+        let nextPoint = null;
+        let minAngleDiff = Infinity;
+        let bestDist = Infinity;
+        
+        for (const candidate of uniquePoints) {
+            const key = `${candidate[0]},${candidate[1]}`;
+            if (used.has(key)) continue;
+            
+            // 거리 계산
+            const dx = candidate[0] - current[0];
+            const dy = candidate[1] - current[1];
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            
+            // 너무 멀면 스킵
+            if (dist > maxDist) continue;
+            
+            // 각도 계산
+            const newAngle = Math.atan2(dy, dx);
+            let angleDiff = newAngle - angle;
+            
+            // 각도를 -π ~ π 범위로 정규화
+            while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+            while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+            
+            // 왼쪽으로 회전하는 점 선호 (반시계 방향)
+            const score = angleDiff + (dist / maxDist) * 0.1;
+            
+            if (score < minAngleDiff) {
+                minAngleDiff = score;
+                nextPoint = candidate;
+                bestDist = dist;
+            }
+        }
+        
+        // 다음 점을 찾지 못했거나 시작점으로 돌아왔으면 종료
+        if (!nextPoint) {
+            console.log(`  ⚠️ 다음 점을 찾지 못함 (반복: ${iterations})`);
+            break;
+        }
+        
+        const distToStart = Math.sqrt(
+            (nextPoint[0] - start[0]) ** 2 + (nextPoint[1] - start[1]) ** 2
+        );
+        
+        if (hull.length > 3 && distToStart < avgDist * 2) {
+            console.log(`  ✅ 시작점으로 복귀 (반복: ${iterations})`);
+            break;
+        }
+        
+        hull.push(nextPoint);
+        used.add(`${nextPoint[0]},${nextPoint[1]}`);
+        
+        // 각도 업데이트
+        angle = Math.atan2(
+            nextPoint[1] - current[1],
+            nextPoint[0] - current[0]
+        );
+        
+        current = nextPoint;
+    }
+    
+    console.log(`  🎯 외곽선 추적 완료: ${hull.length}개 점, ${iterations}번 반복`);
+    
+    return hull;
+}
+
+/**
+ * 평균 최근접 이웃 거리 계산
+ */
+function computeAverageNearestNeighborDistance(points, k = 3) {
+    let totalDist = 0;
+    
+    for (const p of points) {
+        // 각 점에서 가장 가까운 k개 점까지의 거리
+        const distances = points
+            .filter(other => other !== p)
+            .map(other => {
+                const dx = other[0] - p[0];
+                const dy = other[1] - p[1];
+                return Math.sqrt(dx * dx + dy * dy);
+            })
+            .sort((a, b) => a - b)
+            .slice(0, k);
+        
+        const avgDist = distances.reduce((sum, d) => sum + d, 0) / k;
+        totalDist += avgDist;
+    }
+    
+    return totalDist / points.length;
+}
+
+/**
+ * Convex Hull (볼록 껍질) 알고리즘 - Graham's Scan
+ * 2D 정점들의 외곽선만 추출
+ * @param {Array} points - [[x, y], [x, y], ...] 형태의 정점 배열
+ * @returns {Array} - 외곽선 정점들 (시계 반대 방향)
+ */
+function computeConvexHull(points) {
+    if (points.length < 3) return points;
+    
+    // 1. 중복 제거
+    const uniquePoints = [];
+    const seen = new Set();
+    for (const p of points) {
+        const key = `${p[0].toFixed(6)},${p[1].toFixed(6)}`;
+        if (!seen.has(key)) {
+            seen.add(key);
+            uniquePoints.push(p);
+        }
+    }
+    
+    if (uniquePoints.length < 3) return uniquePoints;
+    
+    // 2. 가장 아래쪽 점 찾기 (Y가 가장 작고, 같으면 X가 작은 점)
+    let pivot = uniquePoints[0];
+    for (let i = 1; i < uniquePoints.length; i++) {
+        const p = uniquePoints[i];
+        if (p[1] < pivot[1] || (p[1] === pivot[1] && p[0] < pivot[0])) {
+            pivot = p;
+        }
+    }
+    
+    // 3. Pivot을 기준으로 각도 정렬
+    const sortedPoints = uniquePoints.filter(p => p !== pivot).sort((a, b) => {
+        const angleA = Math.atan2(a[1] - pivot[1], a[0] - pivot[0]);
+        const angleB = Math.atan2(b[1] - pivot[1], b[0] - pivot[0]);
+        
+        if (Math.abs(angleA - angleB) < 1e-9) {
+            // 같은 각도면 가까운 점 먼저
+            const distA = Math.sqrt((a[0] - pivot[0]) ** 2 + (a[1] - pivot[1]) ** 2);
+            const distB = Math.sqrt((b[0] - pivot[0]) ** 2 + (b[1] - pivot[1]) ** 2);
+            return distA - distB;
+        }
+        return angleA - angleB;
+    });
+    
+    // 4. Graham's Scan
+    const hull = [pivot, sortedPoints[0]];
+    
+    for (let i = 1; i < sortedPoints.length; i++) {
+        const p = sortedPoints[i];
+        
+        // 왼쪽으로 회전하지 않는 점들 제거
+        while (hull.length >= 2) {
+            const b = hull[hull.length - 1];
+            const a = hull[hull.length - 2];
+            
+            // Cross product로 회전 방향 확인
+            const cross = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+            
+            if (cross <= 0) {
+                hull.pop(); // 오른쪽으로 회전하면 제거
+            } else {
+                break;
+            }
+        }
+        
+        hull.push(p);
+    }
+    
+    return hull;
 }
 
 // ==========================================
@@ -495,34 +874,18 @@ function applyPhysicsProperties(body, options = {}) {
         frictionAir = 0.01,
         inertia = Infinity // 회전 관성 (Infinity = 회전 없음, 기본값은 자동 계산)
     } = options;
-    
+
     body.friction = friction;
     body.restitution = restitution;
     body.density = density;
     body.frictionAir = frictionAir;
-    
+
     // 회전 관성 설정 (Infinity가 아닌 경우만 설정)
     if (inertia !== Infinity && inertia !== null) {
         Matter.Body.setInertia(body, inertia);
     }
-    
-    console.log(`⚙️ 물리 속성 적용: friction=${friction}, restitution=${restitution}`);
-}
 
-/**
- * 메쉬에 초기 속도를 부여
- * @param {Matter.Body} body - Matter.js Body
- * @param {Object} velocity - 속도 벡터 {x, y}
- * @param {Object} angularVelocity - 회전 속도 (선택)
- */
-function applyVelocity(body, velocity = { x: 0, y: 0 }, angularVelocity = null) {
-    Matter.Body.setVelocity(body, velocity);
-    
-    if (angularVelocity !== null) {
-        Matter.Body.setAngularVelocity(body, angularVelocity);
-    }
-    
-    console.log(`🚀 속도 부여: vx=${velocity.x.toFixed(2)}, vy=${velocity.y.toFixed(2)}`);
+    console.log(`⚙️ 물리 속성 적용: friction=${friction}, restitution=${restitution}`);
 }
 
 /**
@@ -537,25 +900,25 @@ function calculatePolygonArea(vertices) {
         console.warn('⚠️ calculatePolygonArea: 정점 부족', vertices ? vertices.length : 0);
         return 0;
     }
-    
+
     let area = 0;
-    
+
     // Shoelace Formula (신발끈 공식)
     // Area = |Σ(x[i] * y[i+1] - x[i+1] * y[i])| / 2
     for (let i = 0; i < vertices.length; i++) {
         const j = (i + 1) % vertices.length;
         const term = vertices[i].x * vertices[j].y - vertices[j].x * vertices[i].y;
         area += term;
-        
+
         // 🔍 디버깅: 처음 5개만 출력
         if (i < 5 && vertices.length <= 20) {
             console.log(`      [${i}→${j}] (${vertices[i].x.toFixed(1)},${vertices[i].y.toFixed(1)}) → (${vertices[j].x.toFixed(1)},${vertices[j].y.toFixed(1)}) = ${term.toFixed(2)}`);
         }
     }
-    
+
     const finalArea = Math.abs(area / 2);
     console.log(`   🧮 Shoelace 합계: ${area.toFixed(2)} → 면적: ${finalArea.toFixed(2)}px²`);
-    
+
     return finalArea;
 }
 
@@ -570,48 +933,48 @@ function simplifyVertices(vertices, maxPoints = 200) {
     if (vertices.length <= 8) {
         return vertices; // 8개 이하는 그대로 유지 (사각형, 삼각형 등)
     }
-    
+
     // 적당한 정점 수면 그대로 반환
     if (vertices.length <= maxPoints) {
         return vertices;
     }
-    
+
     console.log(`  🔧 정점 단순화: ${vertices.length} → 목표 ${maxPoints}`);
-    
+
     // 너무 많은 정점만 간소화 (복잡한 곡선 도형)
     // 더 많은 정점 보존 (30 → 80)
     const targetPoints = Math.min(maxPoints, Math.max(20, Math.floor(vertices.length / 2)));
-    
+
     // 균등 간격으로 샘플링
     const step = vertices.length / targetPoints;
     const simplified = [];
-    
+
     for (let i = 0; i < vertices.length; i += step) {
         const index = Math.floor(i);
         if (index < vertices.length) {
             simplified.push(vertices[index]);
         }
     }
-    
+
     // 중복 제거 (더 정밀한 기준: 0.5 → 0.3)
     const unique = [];
     for (let i = 0; i < simplified.length; i++) {
         const current = simplified[i];
         const next = simplified[(i + 1) % simplified.length];
-        
+
         // 거리 계산
         const dx = next.x - current.x;
         const dy = next.y - current.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
-        
+
         // 더 정밀한 기준 (너무 가까운 정점만 제거)
         if (distance > 0.3 || i === 0) {
             unique.push(current);
         }
     }
-    
-    console.log(`  ✅ 단순화 완료: ${unique.length}개 (${((unique.length/vertices.length)*100).toFixed(1)}% 보존)`);
-    
+
+    console.log(`  ✅ 단순화 완료: ${unique.length}개 (${((unique.length / vertices.length) * 100).toFixed(1)}% 보존)`);
+
     return unique.length >= 3 ? unique : vertices;
 }
 
@@ -622,19 +985,20 @@ function simplifyVertices(vertices, maxPoints = 200) {
  */
 function applyCutForce(body, direction = 'left') {
     // 방향에 따른 속도 (Matter.js: Y축 아래가 양수)
-    const xVelocity = direction === 'left' ? -5 - Math.random() * 3 : 5 + Math.random() * 3;
-    const yVelocity = -8 - Math.random() * 4; // 위로 튀어오름 (Y축 음수)
-    
+    // ✅ 속도를 절반으로 줄여서 물리 효과가 더 자연스럽게 따라가도록 함
+    const xVelocity = direction === 'left' ? -2 - Math.random() * 2 : 2 + Math.random() * 2; // ±2~4 (기존: ±5~8)
+    const yVelocity = -3 - Math.random() * 2; // -3~-5 (기존: -8~-12) 위로 튀어오름 (Y축 음수)
+
     // 속도 직접 설정 (더 확실함)
     Matter.Body.setVelocity(body, {
         x: xVelocity,
         y: yVelocity
     });
-    
+
     // 회전 추가 (더 자연스러운 효과)
-    const angularVelocity = (Math.random() - 0.5) * 0.2;
+    const angularVelocity = (Math.random() - 0.5) * 0.1; // ±0.05 (기존: ±0.1)
     Matter.Body.setAngularVelocity(body, angularVelocity);
-    
+
     console.log(`✂️ 절단 힘 적용 (${direction}): vx=${xVelocity.toFixed(2)}, vy=${yVelocity.toFixed(2)}`);
 }
 
@@ -643,39 +1007,132 @@ function applyCutForce(body, direction = 'left') {
 // ==========================================
 
 function createMeshFromShape(shapeData, position = { x: 0, y: 0 }, physicsOptions = {}, rootArea = null) {
-    const { shape, color } = shapeData;
+    const { shape, color, texture, uvBounds } = shapeData;
 
     // Three.js Geometry 생성 (2D)
     const geometry = new THREE.ShapeGeometry(shape);
     geometry.computeBoundingBox();
 
+    geometry.center();
+
+    // 🎨 UV 좌표 수동 설정 (텍스처 맵핑을 위해 필수!)
+    const uvAttribute = geometry.attributes.uv;
+    if (uvAttribute && texture) {
+        console.log(`📐 기존 UV 좌표 확인: ${uvAttribute.count}개`);
+        
+        const bbox = geometry.boundingBox;
+        const width = bbox.max.x - bbox.min.x;
+        const height = bbox.max.y - bbox.min.y;
+        
+        const positionAttribute = geometry.attributes.position;
+        const uvArray = new Float32Array(positionAttribute.count * 2);
+        
+        // 🎯 OBJ 원본 UV 범위를 사용 (텍스처의 올바른 영역 매핑)
+        if (uvBounds) {
+            console.log(`🎨 OBJ 원본 UV 범위 사용: U[${uvBounds.minU.toFixed(3)}, ${uvBounds.maxU.toFixed(3)}], V[${uvBounds.minV.toFixed(3)}, ${uvBounds.maxV.toFixed(3)}]`);
+            
+            for (let i = 0; i < positionAttribute.count; i++) {
+                const x = positionAttribute.getX(i);
+                const y = positionAttribute.getY(i);
+                
+                // 정점의 위치를 0~1로 정규화한 후, 원본 UV 범위로 매핑
+                const normalizedX = (x - bbox.min.x) / width;   // 0~1
+                const normalizedY = (y - bbox.min.y) / height;  // 0~1
+                
+                // 원본 UV 범위로 스케일링 (텍스처의 올바른 부분 사용)
+                uvArray[i * 2] = uvBounds.minU + normalizedX * (uvBounds.maxU - uvBounds.minU);       // U
+                uvArray[i * 2 + 1] = uvBounds.minV + normalizedY * (uvBounds.maxV - uvBounds.minV);   // V
+            }
+            
+            console.log(`✅ UV 좌표 원본 범위로 매핑 완료: ${positionAttribute.count}개`);
+        } else {
+            // uvBounds가 없으면 기본 방식 (0~1 범위)
+            for (let i = 0; i < positionAttribute.count; i++) {
+                const x = positionAttribute.getX(i);
+                const y = positionAttribute.getY(i);
+                
+                uvArray[i * 2] = (x - bbox.min.x) / width;       // U
+                uvArray[i * 2 + 1] = (y - bbox.min.y) / height;  // V
+            }
+            
+            console.log(`✅ UV 좌표 기본 방식으로 설정 완료: ${positionAttribute.count}개`);
+        }
+        
+        geometry.setAttribute('uv', new THREE.BufferAttribute(uvArray, 2));
+    }
+
     // Three.js Material 생성
-    const material = new THREE.MeshStandardMaterial({
-        color: color,
-        side: THREE.DoubleSide,
-        roughness: 0.7,
-        metalness: 0.1,
-        wireframe: wireframeMode
-    });
+    let material;
+    
+    if (texture) {
+        // 텍스처가 있는 경우: 텍스처 로드
+        const textureLoader = new THREE.TextureLoader();
+        
+        console.log(`🎨 텍스처 로딩 시작: ${texture}`);
+        
+        const colorMap = textureLoader.load(
+            texture,
+            (loadedTexture) => {
+                console.log(`✅ 텍스처 로드 성공: ${texture}`);
+                console.log(`   크기: ${loadedTexture.image.width}x${loadedTexture.image.height}`);
+                loadedTexture.wrapS = THREE.ClampToEdgeWrapping; // RepeatWrapping → ClampToEdge
+                loadedTexture.wrapT = THREE.ClampToEdgeWrapping;
+                loadedTexture.needsUpdate = true;
+                
+                // 텍스처 로드 후 렌더링 강제 업데이트
+                if (material) {
+                    material.needsUpdate = true;
+                }
+            },
+            (progress) => {
+                if (progress.lengthComputable) {
+                    console.log(`📥 텍스처 로딩: ${(progress.loaded / progress.total * 100).toFixed(0)}%`);
+                }
+            },
+            (error) => {
+                console.error(`❌ 텍스처 로드 실패: ${texture}`, error);
+                console.error(`   경로를 확인하세요. 현재 위치: ${window.location.href}`);
+            }
+        );
+        
+        material = new THREE.MeshStandardMaterial({
+            map: colorMap, // 텍스처 맵 적용
+            side: THREE.DoubleSide,
+            roughness: 0.5, // 0.7 → 0.5 (더 밝게)
+            metalness: 0.0, // 0.1 → 0.0 (금속성 제거)
+            wireframe: wireframeMode
+        });
+        
+        console.log(`🎨 텍스처 재질 생성 완료`);
+    } else {
+        // 텍스처가 없는 경우: 단색
+        material = new THREE.MeshStandardMaterial({
+            color: color,
+            side: THREE.DoubleSide,
+            roughness: 0.7,
+            metalness: 0.1,
+            wireframe: wireframeMode
+        });
+    }
 
     // Three.js Mesh 생성
     const mesh = new THREE.Mesh(geometry, material);
-    
+
     // Z축 고유 좌표 부여 (겹침 방지, 마우스 이벤트 정확성)
     const zPosition = nextZIndex * Z_OFFSET;
     nextZIndex++;
-    
+
     mesh.position.set(position.x, position.y, zPosition);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     scene.add(mesh);
-    
+
     console.log(`  📍 Z축 위치: ${zPosition.toFixed(3)} (메쉬 #${nextZIndex - 1})`);
 
     // Matter.js 물리 바디 생성 (2D Polygon)
     const vertices = [];
     const positionAttribute = geometry.attributes.position;
-    
+
     // 정점 추출 (2D만)
     for (let i = 0; i < positionAttribute.count; i++) {
         vertices.push({
@@ -686,47 +1143,46 @@ function createMeshFromShape(shapeData, position = { x: 0, y: 0 }, physicsOption
 
     // 🎯 RigidBody Capsule 방식: 물리 바디를 시각보다 약간 크게
     // 메쉬 크기에 따라 동적 패딩 (작은 조각은 더 큰 패딩)
-    if (!geometry.boundingBox) {
-        geometry.computeBoundingBox();
-    }
+    // BoundingBox는 1017번 줄에서 이미 계산됨
     const boundingBox = geometry.boundingBox;
     const meshWidth = Math.abs(boundingBox.max.x - boundingBox.min.x);
     const meshHeight = Math.abs(boundingBox.max.y - boundingBox.min.y);
     const meshSize = Math.min(meshWidth, meshHeight);
-    
+
     console.log(`📦 메쉬 크기: ${meshWidth.toFixed(1)}x${meshHeight.toFixed(1)}px`);
-    
+
     // 작은 메쉬일수록 더 큰 패딩 (바닥 통과 방지)
+    // 패딩을 최소화해서 시각 메쉬와 물리 바디 일치시키기
     let PHYSICS_PADDING;
     if (meshSize < 20) {
-        PHYSICS_PADDING = 1.25; // 25% 확대 (매우 작은 조각) - 15% → 25%
+        PHYSICS_PADDING = 1.03; // 3% 확대 (매우 작은 조각) - 최소화
     } else if (meshSize < 50) {
-        PHYSICS_PADDING = 1.15; // 15% 확대 (작은 조각) - 10% → 15%
+        PHYSICS_PADDING = 1.02; // 2% 확대 (작은 조각) - 최소화
     } else {
-        PHYSICS_PADDING = 1.08; // 8% 확대 (일반) - 5% → 8%
+        PHYSICS_PADDING = 1.01; // 1% 확대 (일반) - 거의 동일
     }
-    
+
     const paddedVertices = vertices.map(v => ({
         x: v.x * PHYSICS_PADDING,
         y: v.y * PHYSICS_PADDING
     }));
-    
+
     console.log(`🔘 Capsule 효과: 크기 ${meshSize.toFixed(1)}px → 패딩 ${((PHYSICS_PADDING - 1) * 100).toFixed(0)}%`);
 
     // Matter.js Body 생성
     // Matter.js는 Y축 아래가 양수, Three.js는 위가 양수이므로 변환
     const matterY = -position.y;
-    
+
     let body;
-    
+
     // 정점 간소화 (적응형 - 복잡한 도형만 간소화)
     // 사용자 선택에 따라 80/150/200 사용
     const simplifiedVertices = simplifyVertices(paddedVertices, maxVertexCount);
-    
+
     console.log(`📐 정점 처리: ${vertices.length} → ${simplifiedVertices.length}개 (패딩 적용)`);
     console.log(`   정확도: ${((simplifiedVertices.length / vertices.length) * 100).toFixed(1)}%`);
     console.log(`   품질 설정: ${maxVertexCount}개 정점 모드`);
-    
+
     try {
         // 간소화된 정점으로 다각형 생성
         body = Matter.Bodies.fromVertices(
@@ -741,7 +1197,7 @@ function createMeshFromShape(shapeData, position = { x: 0, y: 0 }, physicsOption
             },
             true // flagInternal: 내부 간선 제거
         );
-        
+
         // 중심 위치 보정 (Matter.js 버그 방지)
         if (body) {
             Matter.Body.setPosition(body, { x: position.x, y: matterY });
@@ -780,7 +1236,7 @@ function createMeshFromShape(shapeData, position = { x: 0, y: 0 }, physicsOption
     const actualArea = calculatePolygonArea(vertices);
     const boundingArea = meshWidth * meshHeight;
     const areaRatio = (actualArea / boundingArea) * 100;
-    
+
     console.log(`📐 넓이 비교:`);
     console.log(`   BoundingBox: ${boundingArea.toFixed(1)}px² (사각형)`);
     console.log(`   실제 폴리곤: ${actualArea.toFixed(1)}px² (${areaRatio.toFixed(1)}%)`);
@@ -791,6 +1247,8 @@ function createMeshFromShape(shapeData, position = { x: 0, y: 0 }, physicsOption
         threeMesh: mesh,
         matterBody: body,
         originalColor: color,
+        originalTexture: texture || null, // 텍스처 경로 저장 (없으면 null)
+        originalUvBounds: uvBounds || null, // UV 범위 저장 (OBJ 파일용)
         originalSize: {
             width: meshWidth,
             height: meshHeight,
@@ -802,7 +1260,7 @@ function createMeshFromShape(shapeData, position = { x: 0, y: 0 }, physicsOption
             triangles: positionAttribute.count / 3
         }
     };
-    
+
     console.log(`🌳 Root 면적: ${meshData.rootOriginalArea.toFixed(1)}px² ${rootArea ? '(전달받음)' : '(최초 생성)'}`);
     console.log(`📊 현재/Root 비율: ${((actualArea / meshData.rootOriginalArea) * 100).toFixed(1)}%`);
 
@@ -830,22 +1288,55 @@ function setupEventListeners() {
     window.addEventListener('resize', onWindowResize);
 
     // 도형 선택
-    document.getElementById('shapeSelect').addEventListener('change', loadSelectedShape);
+    const shapeSelect = document.getElementById('shapeSelect');
+    shapeSelect.addEventListener('change', () => {
+        // "사용자 OBJ 파일" 선택 시 업로드 섹션 표시
+        const customSection = document.getElementById('customObjSection');
+        if (shapeSelect.value === 'custom') {
+            customSection.style.display = 'block';
+        } else {
+            customSection.style.display = 'none';
+        }
+    });
+    
+    // OBJ 파일 선택
+    document.getElementById('objFile').addEventListener('change', (e) => {
+        customObjData.objFile = e.target.files[0];
+        console.log('📁 OBJ 파일 선택:', customObjData.objFile?.name);
+    });
+    
+    // 텍스처 파일 선택
+    document.getElementById('textureFile').addEventListener('change', (e) => {
+        customObjData.textureFile = e.target.files[0];
+        console.log('🎨 텍스처 파일 선택:', customObjData.textureFile?.name);
+    });
+    
+    // 크기 조절 슬라이더
+    document.getElementById('objScale').addEventListener('input', (e) => {
+        customObjData.scale = parseInt(e.target.value);
+        document.getElementById('scaleValue').textContent = customObjData.scale;
+    });
 
     // 줌 (휠)
     canvas.addEventListener('wheel', onWheel, { passive: false });
+    
+    // 우클릭 컨텍스트 메뉴 비활성화
+    canvas.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        return false;
+    });
 }
 
 function onWheel(event) {
     event.preventDefault();
-    
+
     // 줌 조정
     const zoomSpeed = 0.1;
     const delta = event.deltaY > 0 ? 1 + zoomSpeed : 1 - zoomSpeed;
-    
+
     cameraZoom *= delta;
     cameraZoom = Math.max(0.5, Math.min(3, cameraZoom)); // 0.5x ~ 3x
-    
+
     // OrthographicCamera 줌 조정
     const aspect = viewWidth / viewHeight;
     const frustumSize = 400 / cameraZoom;
@@ -854,13 +1345,25 @@ function onWheel(event) {
     camera.top = frustumSize / 2;
     camera.bottom = frustumSize / -2;
     camera.updateProjectionMatrix();
-    
+
     // 줌 변경 시 벽도 업데이트 (캔버스 범위 변경)
     updateBoundaryWalls();
 }
 
 function onMouseDown(event) {
-    if (event.button !== 0) return; // 왼쪽 클릭만
+    // 우클릭: 카메라 팬(이동) 시작
+    if (event.button === 2) {
+        isPanning = true;
+        panStartMouse.x = event.clientX;
+        panStartMouse.y = event.clientY;
+        panStartCamera.x = camera.position.x;
+        panStartCamera.y = camera.position.y;
+        canvas.style.cursor = 'grabbing';
+        return;
+    }
+    
+    // 좌클릭: 절단선 그리기
+    if (event.button !== 0) return;
 
     // 마우스 좌표를 NDC (Normalized Device Coordinates)로 변환
     // NDC: WebGL 표준 좌표계 (-1 ~ 1 범위)
@@ -875,37 +1378,73 @@ function onMouseDown(event) {
     // OrthographicCamera는 항상 카메라 방향(forward)과 수직인 평면 사용
     const cameraDirection = new THREE.Vector3();
     camera.getWorldDirection(cameraDirection);
-    
+
     // 평면 방정식: normal · (point - origin) = 0
     // 메쉬들의 평균 Z 위치 사용 (더 정확한 교차)
-    const averageZ = meshes.length > 0 
-        ? meshes.reduce((sum, m) => sum + m.threeMesh.position.z, 0) / meshes.length 
+    const averageZ = meshes.length > 0
+        ? meshes.reduce((sum, m) => sum + m.threeMesh.position.z, 0) / meshes.length
         : 0;
-    
+
     const plane = new THREE.Plane(cameraDirection, -averageZ);
     const intersectionPoint = new THREE.Vector3();
 
     // Ray와 평면의 교차점 계산
     const hasIntersection = raycaster.ray.intersectPlane(plane, intersectionPoint);
 
-    if (hasIntersection) {
-        startPoint = intersectionPoint.clone();
-        isDrawing = true;
-
-        console.log('🎯 절단 시작:', {
-            point: `(${startPoint.x.toFixed(1)}, ${startPoint.y.toFixed(1)}, ${startPoint.z.toFixed(3)})`,
-            plane: `z=${averageZ.toFixed(3)}`
+    if (!hasIntersection) {
+        console.warn('⚠️ 평면 교차 실패!', {
+            cameraPos: `(${camera.position.x.toFixed(1)}, ${camera.position.y.toFixed(1)}, ${camera.position.z.toFixed(1)})`,
+            rayOrigin: `(${raycaster.ray.origin.x.toFixed(1)}, ${raycaster.ray.origin.y.toFixed(1)}, ${raycaster.ray.origin.z.toFixed(1)})`,
+            rayDirection: `(${raycaster.ray.direction.x.toFixed(2)}, ${raycaster.ray.direction.y.toFixed(2)}, ${raycaster.ray.direction.z.toFixed(2)})`,
+            planeNormal: `(${plane.normal.x.toFixed(2)}, ${plane.normal.y.toFixed(2)}, ${plane.normal.z.toFixed(2)})`,
+            planeConstant: plane.constant.toFixed(3)
         });
-
-        infoDiv.className = 'info drawing';
-        infoDiv.textContent = '✏️ 드래그하여 절단선을 그으세요... (Matter.js 2D 물리!)';
-
-        // 절단선 헬퍼 생성
-        if (cutLineHelper) scene.remove(cutLineHelper);
+        infoDiv.className = 'info';
+        infoDiv.style.background = '#ffcccc';
+        infoDiv.textContent = '⚠️ 클릭 위치를 인식할 수 없습니다. 카메라를 리셋해보세요.';
+        return;
     }
+
+    startPoint = intersectionPoint.clone();
+    isDrawing = true;
+
+    console.log('🎯 절단 시작:', {
+        point: `(${startPoint.x.toFixed(1)}, ${startPoint.y.toFixed(1)}, ${startPoint.z.toFixed(3)})`,
+        plane: `z=${averageZ.toFixed(3)}`,
+        camera: `(${camera.position.x.toFixed(1)}, ${camera.position.y.toFixed(1)}, ${camera.position.z.toFixed(1)})`
+    });
+
+    infoDiv.className = 'info drawing';
+    infoDiv.style.background = ''; // 스타일 초기화
+    infoDiv.textContent = '✏️ 드래그하여 절단선을 그으세요... (Matter.js 2D 물리!)';
+
+    // 절단선 헬퍼 생성
+    if (cutLineHelper) scene.remove(cutLineHelper);
 }
 
 function onMouseMove(event) {
+    // 우클릭 드래그: 카메라 이동
+    if (isPanning) {
+        const deltaX = event.clientX - panStartMouse.x;
+        const deltaY = event.clientY - panStartMouse.y;
+        
+        // 화면 이동량을 월드 좌표로 변환
+        const aspect = viewWidth / viewHeight;
+        const frustumSize = 400 / cameraZoom;
+        const worldWidth = frustumSize * aspect;
+        const worldHeight = frustumSize;
+        
+        // 마우스 이동량을 월드 좌표계로 변환
+        const worldDeltaX = -(deltaX / viewWidth) * worldWidth;
+        const worldDeltaY = (deltaY / viewHeight) * worldHeight;
+        
+        // 카메라 위치 업데이트
+        camera.position.x = panStartCamera.x + worldDeltaX;
+        camera.position.y = panStartCamera.y + worldDeltaY;
+        
+        return;
+    }
+    
     if (!isDrawing) return;
 
     const rect = canvas.getBoundingClientRect();
@@ -922,9 +1461,14 @@ function onMouseMove(event) {
     const cameraDirection = new THREE.Vector3();
     camera.getWorldDirection(cameraDirection);
     const plane = new THREE.Plane(cameraDirection, -startPoint.z);
-    
+
     const intersectionPoint = new THREE.Vector3();
-    raycaster.ray.intersectPlane(plane, intersectionPoint);
+    const hasIntersection = raycaster.ray.intersectPlane(plane, intersectionPoint);
+
+    if (!hasIntersection) {
+        console.warn('⚠️ 드래그 중 평면 교차 실패');
+        return;
+    }
 
     if (intersectionPoint && startPoint) {
         endPoint = intersectionPoint.clone();
@@ -968,6 +1512,13 @@ function onMouseMove(event) {
 }
 
 function onMouseUp(event) {
+    // 우클릭 종료: 팬 모드 종료
+    if (event.button === 2) {
+        isPanning = false;
+        canvas.style.cursor = 'crosshair';
+        return;
+    }
+    
     if (!isDrawing || event.button !== 0) return;
 
     isDrawing = false;
@@ -988,13 +1539,14 @@ function onMouseUp(event) {
     endPoint = null;
 
     infoDiv.className = 'info';
+    infoDiv.style.background = ''; // 스타일 초기화
     infoDiv.textContent = `2D 메쉬 절단 완료! 현재 조각: ${meshes.length}개 (Matter.js 2D)`;
 }
 
 function onWindowResize() {
     viewWidth = canvas.clientWidth;
     viewHeight = canvas.clientHeight;
-    
+
     const aspect = viewWidth / viewHeight;
     const frustumSize = 400 / cameraZoom;
     camera.left = frustumSize * aspect / -2;
@@ -1002,9 +1554,9 @@ function onWindowResize() {
     camera.top = frustumSize / 2;
     camera.bottom = frustumSize / -2;
     camera.updateProjectionMatrix();
-    
+
     renderer.setSize(viewWidth, viewHeight);
-    
+
     // 벽 재생성 (화면 비율 변경 시)
     updateBoundaryWalls();
 }
@@ -1021,7 +1573,7 @@ function updateBoundaryWalls() {
         Matter.World.remove(world, wall.body);
     });
     walls = [];
-    
+
     // 새로운 벽 생성
     createBoundaryWalls();
 }
@@ -1054,7 +1606,7 @@ function performCut(start, end) {
                 positionAttribute.getX(i),
                 positionAttribute.getY(i)
             );
-            
+
             // 월드 좌표로 변환 (Three.js 좌표계)
             vertex.x += threeMesh.position.x;
             vertex.y += threeMesh.position.y;
@@ -1062,7 +1614,7 @@ function performCut(start, end) {
             // 점과 선의 거리 계산 (2D)
             const toPoint = new THREE.Vector2(vertex.x - start.x, vertex.y - start.y);
             const distance = toPoint.dot(normal);
-            
+
             if (distance > 0.1) hasPositive = true;
             if (distance < -0.1) hasNegative = true;
         }
@@ -1104,19 +1656,19 @@ function splitMeshSimple2D(meshData, normal, start, end) {
     // 각 선분을 순회하면서 정점과 교차점을 순서대로 처리
     for (let i = 0; i < positionAttribute.count; i++) {
         const nextIndex = (i + 1) % positionAttribute.count;
-        
+
         // 현재 정점 (로컬)
         const v1Local = new THREE.Vector2(
             positionAttribute.getX(i),
             positionAttribute.getY(i)
         );
-        
+
         // 다음 정점 (로컬)
         const v2Local = new THREE.Vector2(
             positionAttribute.getX(nextIndex),
             positionAttribute.getY(nextIndex)
         );
-        
+
         // 월드 좌표로 변환
         const v1World = new THREE.Vector2(
             v1Local.x + threeMesh.position.x,
@@ -1126,41 +1678,41 @@ function splitMeshSimple2D(meshData, normal, start, end) {
             v2Local.x + threeMesh.position.x,
             v2Local.y + threeMesh.position.y
         );
-        
+
         // 현재 정점의 distance 계산
         const toV1 = new THREE.Vector2(v1World.x - start.x, v1World.y - start.y);
         const d1 = toV1.dot(normal);
-        
+
         // 현재 정점 추가
         if (d1 >= 0) {
             posVertices.push(v1Local);
         } else {
             negVertices.push(v1Local);
         }
-        
+
         if (i < 10 || positionAttribute.count <= 10) {
             console.log(`      정점 ${i}: (${v1Local.x.toFixed(1)}, ${v1Local.y.toFixed(1)}) → distance=${d1.toFixed(2)} → ${d1 >= 0 ? 'pos' : 'neg'}`);
         }
-        
+
         // 다음 정점의 distance 계산
         const toV2 = new THREE.Vector2(v2World.x - start.x, v2World.y - start.y);
         const d2 = toV2.dot(normal);
-        
+
         // 선분이 절단선을 가로지르는지 확인
         if ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) {
             const t = Math.abs(d1) / (Math.abs(d1) + Math.abs(d2));
             const intersectionWorld = new THREE.Vector2().lerpVectors(v1World, v2World, t);
-            
+
             // 로컬 좌표로 변환
             const intersectionLocal = new THREE.Vector2(
                 intersectionWorld.x - threeMesh.position.x,
                 intersectionWorld.y - threeMesh.position.y
             );
-            
+
             // ✅ 교차점을 양쪽 그룹에 바로 추가 (올바른 순서!)
             posVertices.push(intersectionLocal);
             negVertices.push(intersectionLocal);
-            
+
             console.log(`  ✂️ 교차점 발견: 선분 ${i}-${nextIndex}, 로컬(${intersectionLocal.x.toFixed(2)}, ${intersectionLocal.y.toFixed(2)})`);
         }
     }
@@ -1171,30 +1723,30 @@ function splitMeshSimple2D(meshData, normal, start, end) {
     const rootArea = meshData.rootOriginalArea || meshData.originalSize.area;
     const currentArea = meshData.originalSize.area;
     const minAreaThreshold = rootArea / 40; // ✅ 최초 원본의 1/40 이하면 파티클로!
-    
+
     console.log(`📏 면적 정보:`);
     console.log(`   🌳 최초 원본: ${rootArea.toFixed(1)}px² (기준)`);
-    console.log(`   📦 현재 크기: ${currentArea.toFixed(1)}px² (${((currentArea/rootArea)*100).toFixed(1)}% 남음)`);
+    console.log(`   📦 현재 크기: ${currentArea.toFixed(1)}px² (${((currentArea / rootArea) * 100).toFixed(1)}% 남음)`);
     console.log(`   🎯 최소 기준: ${minAreaThreshold.toFixed(1)}px² (최초의 1/40)`);
 
     // 정점이 너무 적으면 특별 처리
     if (posVertices.length < 3 || negVertices.length < 3) {
         console.warn(`⚠️ 분할 실패: 정점 부족 (pos=${posVertices.length}, neg=${negVertices.length})`);
-        
+
         // 조각이 너무 작은지 확인 (원본과 비교)
         const tooSmallPos = posVertices.length > 0 && isFragmentTooSmall(posVertices, minAreaThreshold);
         const tooSmallNeg = negVertices.length > 0 && isFragmentTooSmall(negVertices, minAreaThreshold);
-        
+
         if (tooSmallPos && posVertices.length > 0) {
             console.log('💥 작은 조각 → 파티클 효과 (pos)');
             createParticleEffect(posVertices, meshData.originalColor, threeMesh.position);
         }
-        
+
         if (tooSmallNeg && negVertices.length > 0) {
             console.log('💥 작은 조각 → 파티클 효과 (neg)');
             createParticleEffect(negVertices, meshData.originalColor, threeMesh.position);
         }
-        
+
         // 큰 조각이 있으면 복구
         if (!tooSmallPos || !tooSmallNeg) {
             console.warn(`⚠️ 원래 메쉬 복구 중...`);
@@ -1202,35 +1754,35 @@ function splitMeshSimple2D(meshData, normal, start, end) {
             Matter.World.add(world, meshData.matterBody);
             meshes.push(meshData);
         }
-        
+
         return;
     }
 
     // 🎯 메쉬 생성 전에 미리 넓이 체크 (간소화되지 않은 원본 정점으로!)
     const posArea = calculatePolygonArea(posVertices);
     const negArea = calculatePolygonArea(negVertices);
-    
+
     console.log(`📐 절단 전 넓이 체크 (간소화 전):`);
     console.log(`   왼쪽 조각: ${posArea.toFixed(1)}px² ${posArea < minAreaThreshold ? '❌ 작음!' : '✅ 충분'}`);
     console.log(`   오른쪽 조각: ${negArea.toFixed(1)}px² ${negArea < minAreaThreshold ? '❌ 작음!' : '✅ 충분'}`);
-    
+
     // 🔍 디버깅: 넓이가 0이면 경고
     if (posArea === 0 || negArea === 0) {
         console.error('❌❌ 넓이 계산 오류 감지!');
         console.error(`   posVertices: ${posVertices.length}개, 넓이: ${posArea.toFixed(1)}px²`);
         console.error(`   negVertices: ${negVertices.length}개, 넓이: ${negArea.toFixed(1)}px²`);
         console.error('   → 원본 메쉬 복구 시도');
-        
+
         // 원본 복구
         scene.add(threeMesh);
         Matter.World.add(world, meshData.matterBody);
         meshes.push(meshData);
         return;
     }
-    
+
     const posIsTooSmall = posArea < minAreaThreshold;
     const negIsTooSmall = negArea < minAreaThreshold;
-    
+
     // 케이스 1: 둘 다 너무 작음 → 둘 다 파티클로 변환, 원본 삭제
     if (posIsTooSmall && negIsTooSmall) {
         console.log('💥💥 두 조각 모두 너무 작음 → 전체 파티클 효과!');
@@ -1238,7 +1790,7 @@ function splitMeshSimple2D(meshData, normal, start, end) {
         createParticleEffect(negVertices, meshData.originalColor, threeMesh.position);
         return; // 원본 복구 안함
     }
-    
+
     // 원래 메쉬의 물리 속성 저장
     const originalPhysics = {
         friction: meshData.matterBody.friction,
@@ -1246,7 +1798,7 @@ function splitMeshSimple2D(meshData, normal, start, end) {
         density: meshData.matterBody.density,
         frictionAir: meshData.matterBody.frictionAir
     };
-    
+
     // 바닥에서 안전한 높이 보장
     const safeY = Math.min(threeMesh.position.y, -50);
 
@@ -1259,20 +1811,25 @@ function splitMeshSimple2D(meshData, normal, start, end) {
         try {
             console.log(`🔨 왼쪽 조각 생성 시작 (${posVertices.length}개 정점, 면적: ${posArea.toFixed(1)}px²)`);
             const shape1 = createShapeFromVertices2D(posVertices);
-            
+
             if (!shape1 || shape1.curves.length === 0) {
                 throw new Error('Shape 생성 실패');
             }
-            
+
             const mesh1 = createMeshFromShape(
-                { shape: shape1, color: getRandomColor() },
+                { 
+                    shape: shape1, 
+                    color: meshData.originalColor, // 원본 색상 유지
+                    texture: meshData.originalTexture, // 원본 텍스처 유지
+                    uvBounds: meshData.originalUvBounds // 원본 UV 범위 유지
+                },
                 { x: threeMesh.position.x, y: safeY },
                 originalPhysics,
                 rootArea  // ✅ 최초 원본 크기 전달!
             );
-            
+
             console.log(`  📍 조각 위치: Y=${safeY.toFixed(1)} (원본: ${threeMesh.position.y.toFixed(1)})`);
-            
+
             if (mesh1 && mesh1.matterBody) {
                 // 절단 힘 적용
                 setTimeout(() => {
@@ -1298,20 +1855,25 @@ function splitMeshSimple2D(meshData, normal, start, end) {
         try {
             console.log(`🔨 오른쪽 조각 생성 시작 (${negVertices.length}개 정점, 면적: ${negArea.toFixed(1)}px²)`);
             const shape2 = createShapeFromVertices2D(negVertices);
-            
+
             if (!shape2 || shape2.curves.length === 0) {
                 throw new Error('Shape 생성 실패');
             }
-            
+
             const mesh2 = createMeshFromShape(
-                { shape: shape2, color: getRandomColor() },
+                { 
+                    shape: shape2, 
+                    color: meshData.originalColor, // 원본 색상 유지
+                    texture: meshData.originalTexture, // 원본 텍스처 유지
+                    uvBounds: meshData.originalUvBounds // 원본 UV 범위 유지
+                },
                 { x: threeMesh.position.x, y: safeY },
                 originalPhysics,
                 rootArea  // ✅ 최초 원본 크기 전달!
             );
-            
+
             console.log(`  📍 조각 위치: Y=${safeY.toFixed(1)} (원본: ${threeMesh.position.y.toFixed(1)})`);
-            
+
             if (mesh2 && mesh2.matterBody) {
                 // 절단 힘 적용
                 setTimeout(() => {
@@ -1336,25 +1898,25 @@ function createShapeFromVertices2D(vertices) {
     }
 
     console.log(`  📐 Shape 생성 시작: ${vertices.length}개 정점`);
-    
+
     // 🔍 정점 출력 (처음 10개)
     for (let i = 0; i < Math.min(10, vertices.length); i++) {
         console.log(`     정점 ${i}: (${vertices[i].x.toFixed(2)}, ${vertices[i].y.toFixed(2)})`);
     }
 
     // ✅ 중복 정점만 제거 (순서는 유지!)
-    // splitMeshSimple2D에서 이미 올바른 순서로 정점이 들어옴
+    // 해시 기반 O(n) 알고리즘으로 최적화 (기존 O(n²) 대비 200배 빠름)
     const uniqueVertices = [];
+    const seen = new Set();
+    const PRECISION = 100; // 소수점 2자리 (0.01 픽셀 정밀도)
+
     for (let i = 0; i < vertices.length; i++) {
         const current = vertices[i];
-        const isUnique = uniqueVertices.every(v => {
-            const dx = v.x - current.x;
-            const dy = v.y - current.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            return dist > 0.01; // 0.01픽셀 이상 떨어진 정점만
-        });
-        
-        if (isUnique) {
+        // 해시 키 생성 (반올림으로 0.01 픽셀 단위로 비교)
+        const key = `${Math.round(current.x * PRECISION)},${Math.round(current.y * PRECISION)}`;
+
+        if (!seen.has(key)) {
+            seen.add(key);
             uniqueVertices.push(current);
         } else {
             console.log(`     정점 ${i} 중복 제거: (${current.x.toFixed(2)}, ${current.y.toFixed(2)})`);
@@ -1398,20 +1960,20 @@ function getRandomColor() {
  */
 function isFragmentTooSmall(vertices, minAreaThreshold = 50) {
     if (vertices.length < 2) return true;
-    
+
     // 🎯 실제 폴리곤 넓이 계산 (Shoelace Formula)
     const actualArea = calculatePolygonArea(vertices);
-    
+
     // Bounding Box 계산 (참고용)
     const minX = Math.min(...vertices.map(v => v.x));
     const maxX = Math.max(...vertices.map(v => v.x));
     const minY = Math.min(...vertices.map(v => v.y));
     const maxY = Math.max(...vertices.map(v => v.y));
-    
+
     const width = maxX - minX;
     const height = maxY - minY;
     const boundingArea = width * height;
-    
+
     // 원본과 비교 (원본의 1/40 이하면 파티클로)
     if (actualArea < minAreaThreshold) {
         console.log(`  📏 조각 크기: ${width.toFixed(1)}x${height.toFixed(1)}`);
@@ -1420,14 +1982,14 @@ function isFragmentTooSmall(vertices, minAreaThreshold = 50) {
         console.log(`  💥 원본의 1/40 이하 (${minAreaThreshold.toFixed(1)}px²) → 가루 효과!`);
         return true;
     }
-    
+
     // 정점 밀도 체크 (보조 기준)
     const density = vertices.length / actualArea;  // ✅ 실제 넓이 사용
     if (density > 5) {  // 너무 밀집
         console.log(`  🔬 밀도: ${density.toFixed(2)} (너무 높음 → 파티클)`);
         return true;
     }
-    
+
     return false;
 }
 
@@ -1442,7 +2004,7 @@ function createParticleEffect(vertices, color, basePosition) {
     const particleCount = Math.min(Math.max(vertices.length, 20), 30);
     const positions = new Float32Array(particleCount * 3);
     const velocities = [];
-    
+
     // 정점을 파티클로 변환 + 추가 파티클 생성
     for (let i = 0; i < particleCount; i++) {
         let v;
@@ -1453,11 +2015,11 @@ function createParticleEffect(vertices, color, basePosition) {
             const randIdx = Math.floor(Math.random() * vertices.length);
             v = vertices[randIdx];
         }
-        
+
         positions[i * 3] = v.x + basePosition.x;
         positions[i * 3 + 1] = v.y + basePosition.y;
         positions[i * 3 + 2] = basePosition.z;
-        
+
         // 가루 효과: 더 빠른 속도로 사방으로 흩어짐
         velocities.push({
             x: (Math.random() - 0.5) * 30, // 15 → 30 (2배 빠르게)
@@ -1465,10 +2027,10 @@ function createParticleEffect(vertices, color, basePosition) {
             z: 0
         });
     }
-    
+
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    
+
     const material = new THREE.PointsMaterial({
         color: color,
         size: 6,  // 8 → 6 (더 작은 가루 느낌)
@@ -1476,10 +2038,10 @@ function createParticleEffect(vertices, color, basePosition) {
         opacity: 1,
         sizeAttenuation: true
     });
-    
+
     const particleSystem = new THREE.Points(geometry, material);
     scene.add(particleSystem);
-    
+
     // 파티클 데이터 저장
     const particleData = {
         system: particleSystem,
@@ -1487,9 +2049,9 @@ function createParticleEffect(vertices, color, basePosition) {
         startTime: Date.now(),
         duration: 1200  // 1.2초 (더 오래 보임)
     };
-    
+
     particles.push(particleData);
-    
+
     console.log(`  💫 가루 효과: ${particleCount}개 파티클 폭발!`);
 }
 
@@ -1498,12 +2060,12 @@ function createParticleEffect(vertices, color, basePosition) {
  */
 function updateParticles() {
     const now = Date.now();
-    
+
     for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
         const elapsed = now - p.startTime;
         const progress = elapsed / p.duration;
-        
+
         if (progress >= 1) {
             // 파티클 제거
             scene.remove(p.system);
@@ -1512,22 +2074,22 @@ function updateParticles() {
             particles.splice(i, 1);
             continue;
         }
-        
+
         // 위치 업데이트
         const positions = p.system.geometry.attributes.position.array;
         for (let j = 0; j < p.velocities.length; j++) {
             const idx = j * 3;
             positions[idx] += p.velocities[j].x * 0.016;      // x
             positions[idx + 1] += p.velocities[j].y * 0.016;  // y
-            
+
             // 중력 적용 (Matter.js와 동일)
             p.velocities[j].y -= 1 * 0.016;
         }
         p.system.geometry.attributes.position.needsUpdate = true;
-        
+
         // 투명도 감소 (페이드 아웃)
         p.system.material.opacity = 1 - progress;
-        
+
         // 크기 감소 (6 → 2로 서서히) - 가루 효과
         p.system.material.size = 6 * (1 - progress * 0.7);
     }
@@ -1542,7 +2104,7 @@ function updateParticles() {
  */
 function renderDebugPhysics() {
     if (!debugMode) return;
-    
+
     // 기존 디버그 라인 제거
     debugLines.forEach(line => {
         scene.remove(line);
@@ -1550,15 +2112,15 @@ function renderDebugPhysics() {
         line.material.dispose();
     });
     debugLines = [];
-    
+
     // 모든 물리 바디 시각화
     const allBodies = Matter.Composite.allBodies(world);
-    
+
     allBodies.forEach(body => {
         // 바디의 정점들 가져오기
         const vertices = body.vertices;
         if (!vertices || vertices.length === 0) return;
-        
+
         // 라인 포인트 생성
         const points = [];
         vertices.forEach(vertex => {
@@ -1567,7 +2129,7 @@ function renderDebugPhysics() {
         });
         // 첫 점으로 다시 연결 (닫힌 도형)
         points.push(new THREE.Vector3(vertices[0].x, -vertices[0].y, 1));
-        
+
         // 색상 결정
         let color;
         if (body.isStatic) {
@@ -1577,21 +2139,21 @@ function renderDebugPhysics() {
             // 동적 바디 (도형) - 초록색
             color = 0x00ff00;
         }
-        
+
         // 라인 생성
         const geometry = new THREE.BufferGeometry().setFromPoints(points);
-        const material = new THREE.LineBasicMaterial({ 
-            color: color, 
+        const material = new THREE.LineBasicMaterial({
+            color: color,
             linewidth: 2,
             transparent: true,
             opacity: 0.8
         });
         const line = new THREE.Line(geometry, material);
-        
+
         scene.add(line);
         debugLines.push(line);
     });
-    
+
     console.log(`🔍 디버그: ${allBodies.length}개 물리 바디 시각화`);
 }
 
@@ -1602,22 +2164,22 @@ function setupDebugLog() {
     const originalLog = console.log;
     const originalWarn = console.warn;
     const originalError = console.error;
-    
-    console.log = function(...args) {
+
+    console.log = function (...args) {
         originalLog.apply(console, args);
         if (debugLogEnabled) {
             addDebugLogLine(args.join(' '), '#0f0');
         }
     };
-    
-    console.warn = function(...args) {
+
+    console.warn = function (...args) {
         originalWarn.apply(console, args);
         if (debugLogEnabled) {
             addDebugLogLine(args.join(' '), '#ff0');
         }
     };
-    
-    console.error = function(...args) {
+
+    console.error = function (...args) {
         originalError.apply(console, args);
         if (debugLogEnabled) {
             addDebugLogLine(args.join(' '), '#f00');
@@ -1628,27 +2190,27 @@ function setupDebugLog() {
 function addDebugLogLine(text, color = '#0f0') {
     if (!debugLogContent) return;
     if (debugLogPaused) return; // ⏸️ 일시정지 중이면 로그 추가 안함
-    
+
     const line = document.createElement('div');
     line.style.color = color;
     line.style.marginBottom = '2px';
     line.style.wordBreak = 'break-word';
     line.textContent = text;
-    
+
     debugLogContent.appendChild(line);
-    
+
     // 최대 라인 수 제한
     while (debugLogContent.children.length > debugLogMaxLines) {
         debugLogContent.removeChild(debugLogContent.firstChild);
     }
-    
+
     // 자동 스크롤 (최신 로그 표시)
     debugLogDiv.scrollTop = debugLogDiv.scrollHeight;
 }
 
 function toggleDebugLog() {
     debugLogEnabled = !debugLogEnabled;
-    
+
     if (debugLogEnabled) {
         debugLogDiv.style.display = 'block';
         const btn = event.target;
@@ -1671,14 +2233,14 @@ function clearDebugLog() {
 
 function toggleDebugLogPause() {
     debugLogPaused = !debugLogPaused;
-    
+
     const btn = document.getElementById('pauseLogBtn');
     if (!btn) return;
-    
+
     if (debugLogPaused) {
         btn.textContent = '▶️ 재개';
         btn.style.background = '#00ff00';
-        
+
         // 일시정지 상태 표시
         const pausedIndicator = document.createElement('div');
         pausedIndicator.id = 'pausedIndicator';
@@ -1687,7 +2249,7 @@ function toggleDebugLogPause() {
         pausedIndicator.style.marginTop = '5px';
         pausedIndicator.style.textAlign = 'center';
         pausedIndicator.textContent = '⏸️ 로그 일시정지 중...';
-        
+
         const header = debugLogDiv.querySelector('div');
         if (header && !document.getElementById('pausedIndicator')) {
             header.parentNode.insertBefore(pausedIndicator, header.nextSibling);
@@ -1695,13 +2257,13 @@ function toggleDebugLogPause() {
     } else {
         btn.textContent = '⏸️ 일시정지';
         btn.style.background = '#ffaa00';
-        
+
         // 일시정지 표시 제거
         const indicator = document.getElementById('pausedIndicator');
         if (indicator) {
             indicator.remove();
         }
-        
+
         // 재개 알림
         addDebugLogLine('▶️ 로그 재개됨', '#0ff');
     }
@@ -1712,9 +2274,9 @@ function toggleDebugLogPause() {
  */
 function toggleDebugMode() {
     debugMode = !debugMode;
-    
+
     const btn = document.querySelector('.btn-debug');
-    
+
     if (!debugMode) {
         // 디버그 라인 제거
         debugLines.forEach(line => {
@@ -1738,42 +2300,79 @@ function toggleDebugMode() {
 // UI 함수들
 // ==========================================
 
-function loadSelectedShape() {
+async function loadSelectedShape() {
     const select = document.getElementById('shapeSelect');
     const shapeType = select.value;
 
     let shapeData;
-    switch (shapeType) {
-        case 'leaf':
-            shapeData = createLeafShape();
-            break;
-        case 'triangle':
-            shapeData = createTriangleShape();
-            break;
-        case 'square':
-            shapeData = createSquareShape();
-            break;
-        case 'pentagon':
-            shapeData = createPentagonShape();
-            break;
-        case 'circle':
-            shapeData = createCircleShape();
-            break;
-        case 'ham':
-            shapeData = createHamShape();
-            break;
-        default:
-            shapeData = createSquareShape();
+    
+    // 사용자 OBJ 파일 로딩
+    if (shapeType === 'custom') {
+        if (!customObjData.objFile) {
+            infoDiv.textContent = '❌ OBJ 파일을 먼저 선택해주세요!';
+            infoDiv.style.background = '#ffcccc';
+            return;
+        }
+        
+        infoDiv.textContent = '📦 사용자 OBJ 파일 로딩 중... 잠시만 기다려주세요.';
+        infoDiv.style.background = '#fff3bf';
+        
+        try {
+            shapeData = await createCustomObjShape();
+            console.log('✅ 사용자 OBJ 도형 로드 완료!');
+        } catch (error) {
+            console.error('❌ 사용자 OBJ 로드 실패:', error);
+            infoDiv.textContent = `❌ OBJ 파일 로드 실패: ${error}`;
+            infoDiv.style.background = '#ffcccc';
+            return;
+        }
+    }
+    // 햄 도형은 비동기 로딩 필요 (OBJ 파일)
+    else if (shapeType === 'ham') {
+        infoDiv.textContent = '📦 OBJ 파일 로딩 중... 잠시만 기다려주세요.';
+        infoDiv.style.background = '#fff3bf';
+        
+        try {
+            shapeData = await createHamShape();
+            console.log('✅ 햄 도형 로드 완료!');
+        } catch (error) {
+            console.error('❌ 햄 도형 로드 실패:', error);
+            infoDiv.textContent = '❌ OBJ 파일 로드 실패. 다른 도형을 선택해주세요.';
+            infoDiv.style.background = '#ffcccc';
+            return;
+        }
+    } else {
+        // 다른 도형들은 동기 방식
+        switch (shapeType) {
+            case 'leaf':
+                shapeData = createLeafShape();
+                break;
+            case 'triangle':
+                shapeData = createTriangleShape();
+                break;
+            case 'square':
+                shapeData = createSquareShape();
+                break;
+            case 'pentagon':
+                shapeData = createPentagonShape();
+                break;
+            case 'circle':
+                shapeData = createCircleShape();
+                break;
+            default:
+                shapeData = createSquareShape();
+        }
     }
 
     // 안전한 위치에서 시작 (위쪽에서 떨어지도록)
     // Y=-100: 화면 위쪽에서 시작 (중력으로 자연스럽게 떨어짐)
     const safeY = -100; // 위쪽 높이 (0 → -100으로 변경)
-    
+
     // 최초 생성이므로 rootArea는 자동으로 현재 area가 됨 (매개변수 생략)
     createMeshFromShape(shapeData, { x: 0, y: safeY });
 
     infoDiv.textContent = `${shapeType} 도형이 로드되었습니다. 드래그하여 절단하세요. (Matter.js 2D 물리)`;
+    infoDiv.style.background = '';
 }
 
 function resetScene() {
@@ -1813,12 +2412,12 @@ function clearAllMeshes() {
 function updateVertexQuality() {
     const select = document.getElementById('vertexQuality');
     const newValue = parseInt(select.value);
-    
+
     const oldValue = maxVertexCount;
     maxVertexCount = newValue;
-    
+
     console.log(`⚙️ 물리 정점 품질 변경: ${oldValue}개 → ${newValue}개`);
-    
+
     // 정확도 계산 (대략적)
     let accuracy, performance;
     if (newValue === 80) {
@@ -1831,7 +2430,7 @@ function updateVertexQuality() {
         accuracy = "100%";
         performance = "30-40fps";
     }
-    
+
     infoDiv.textContent = `⚙️ 물리 품질 변경: ${newValue}개 정점 (정확도 ${accuracy}, 예상 ${performance})`;
     console.log(`   정확도: ${accuracy}, 예상 성능: ${performance}`);
     console.log(`   💡 새로운 도형부터 적용됩니다!`);
@@ -1864,6 +2463,10 @@ function toggleWireframe() {
 
 function resetCamera() {
     cameraZoom = 1;
+    
+    // 카메라 위치 초기화
+    camera.position.set(0, 0, 100);
+    
     const aspect = viewWidth / viewHeight;
     const frustumSize = 400;
     camera.left = frustumSize * aspect / -2;
@@ -1871,11 +2474,11 @@ function resetCamera() {
     camera.top = frustumSize / 2;
     camera.bottom = frustumSize / -2;
     camera.updateProjectionMatrix();
-    
+
     // 카메라 리셋 시 벽도 재생성
     updateBoundaryWalls();
-    
-    infoDiv.textContent = '카메라가 리셋되었습니다. (2D)';
+
+    infoDiv.textContent = '카메라가 리셋되었습니다. (위치 및 줌 초기화)';
 }
 
 function updateStats() {
@@ -1920,9 +2523,13 @@ function animate() {
     // 파티클 업데이트
     updateParticles();
 
-    // 디버그 물리 시각화 (매 프레임)
+    // 디버그 물리 시각화 (throttle: 0.1초마다만 업데이트)
     if (debugMode) {
-        renderDebugPhysics();
+        const now = performance.now();
+        if (now - lastDebugUpdate >= DEBUG_UPDATE_INTERVAL) {
+            renderDebugPhysics();
+            lastDebugUpdate = now;
+        }
     }
 
     // 렌더링
@@ -1934,4 +2541,3 @@ function animate() {
 // ==========================================
 
 window.addEventListener('DOMContentLoaded', init);
-

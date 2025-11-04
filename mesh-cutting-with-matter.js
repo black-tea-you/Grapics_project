@@ -1,81 +1,144 @@
-// ==========================================
-// Three.js + Matter.js 기반 2D 메쉬 커팅 시스템
-// 완벽한 2D 물리 시뮬레이션 버전
-// ==========================================
-
-// DOM 요소
-const canvas = document.getElementById('canvas');
-const infoDiv = document.getElementById('info');
-const loadingDiv = document.getElementById('loading');
-
-// Three.js 변수
-let scene, camera, renderer;
-let raycaster, mouse;
-
-// Matter.js 변수
-let engine, world;
-let groundBody;
-let walls = []; // 캔버스 경계 벽들
-
-// 상태 변수
-let meshes = []; // { threeMesh, matterBody, userData }
-let isDrawing = false;
-let startPoint = null;
-let endPoint = null;
-let cutLineHelper = null;
-
-// 카메라 팬(이동) 변수
-let isPanning = false;
-let panStartMouse = { x: 0, y: 0 };
-let panStartCamera = { x: 0, y: 0 };
-
-// 사용자 OBJ 파일 변수
-let customObjData = {
-    objFile: null,
-    textureFile: null,
-    scale: 200
-};
-
-// 와이어프레임 모드
-let wireframeMode = false;
-
-// 성능 측정
-let fps = 0;
-let lastTime = performance.now();
-let frameCount = 0;
-
-// 2D 설정
-let viewWidth = 800;
-let viewHeight = 600;
-let cameraZoom = 1;
-
-// Z축 관리 (겹침 방지)
-let nextZIndex = 0;
-const Z_OFFSET = 0.01;
-
-// 파티클 시스템
-let particles = [];
-
-// 디버그 시각화
-let debugMode = false; // 물리 충돌 영역 표시 (기본값: OFF로 성능 향상)
-let debugLines = []; // 물리 바디 시각화 라인들
-let lastDebugUpdate = 0; // 마지막 디버그 업데이트 시간
-const DEBUG_UPDATE_INTERVAL = 100; // 디버그 업데이트 간격 (ms) - 0.1초마다
-
-// 물리 정점 품질 설정
-let maxVertexCount = 80; // 기본값: 80개 (빠름)
-
-// 화면 디버그 로그
-let debugLogEnabled = false;
-let debugLogPaused = false; // 로그 일시정지 상태
-let debugLogDiv = null;
-let debugLogContent = null;
-let debugLogMaxLines = 500; // 최대 로그 라인 수
+/**
+ * ==========================================
+ * Three.js + Matter.js 기반 2D 메쉬 커팅 시스템
+ * ==========================================
+ * 
+ * @description
+ * 2D 환경에서 메쉬를 절단하고 물리 시뮬레이션을 수행하는 인터랙티브 애플리케이션입니다.
+ * 마우스 드래그로 절단선을 그어 도형을 분할하고, Matter.js 물리 엔진으로 자연스러운 낙하와 충돌을 구현합니다.
+ * 
+ * @features
+ * - 2D 메쉬 절단 및 분할 기능
+ * - Matter.js 기반 물리 시뮬레이션 (중력, 충돌, 마찰)
+ * - OBJ 파일 로드 및 2D 투영
+ * - 텍스처 매핑 지원
+ * - 파티클 효과 (작은 조각 처리)
+ * - 디버그 모드 (물리 바디 시각화)
+ * - 카메라 팬/줌 기능
+ * 
+ * @dependencies
+ * - Three.js (3D 그래픽스 라이브러리)
+ * - Matter.js (2D 물리 엔진)
+ * 
+ * @author Graphics Project
+ * @version 2.0
+ */
 
 // ==========================================
-// 초기화
+// 전역 변수 선언
 // ==========================================
 
+
+
+//@section DOM 요소
+const canvas = document.getElementById('canvas');      // 메인 렌더링 캔버스
+const infoDiv = document.getElementById('info');      // 정보 표시 영역
+const loadingDiv = document.getElementById('loading'); // 로딩 인디케이터
+
+/**
+ * @section Three.js 관련 변수
+ */
+let scene;           // Three.js 씬 객체
+let camera;          // OrthographicCamera (2D 전용)
+let renderer;        // WebGL 렌더러
+let raycaster;       // 마우스 피킹용 레이캐스터
+let mouse;           // 마우스 좌표 (Vector2)
+
+/**
+ * @section Matter.js 물리 엔진 변수
+ */
+let engine;          //Matter.js 물리 엔진
+let world;           //물리 월드
+let walls = [];      //캔버스 경계 벽들 (상하좌우)
+
+/**
+ * @section 메쉬 및 절단 상태
+ */
+let meshes = [];     // 메쉬 데이터 배열 [{ threeMesh, matterBody, userData, ... }]
+let isDrawing = false;      // 절단선 그리기 중 여부
+let startPoint = null;     // 절단선 시작점 (Vector3)
+let endPoint = null;       // 절단선 끝점 (Vector3)
+let cutLineHelper = null;  // 절단선 시각화 헬퍼 (Line)
+
+/**
+ * @section 카메라 컨트롤
+ */
+let isPanning = false;              // 카메라 팬 모드 활성화 여부
+let panStartMouse = { x: 0, y: 0 }; // 팬 시작 시 마우스 위치
+let panStartCamera = { x: 0, y: 0 }; // 팬 시작 시 카메라 위치
+
+/**
+ * @section 렌더링 모드
+ */
+let wireframeMode = false; // 와이어프레임 모드 활성화 여부
+
+/**
+ * @section 성능 측정
+ */
+let fps = 0;                           // 현재 FPS
+let lastTime = performance.now();       // 마지막 FPS 계산 시간
+let frameCount = 0;                     // 프레임 카운터
+
+/**
+ * @section 뷰포트 설정
+ */
+let viewWidth = 800;   // 뷰포트 너비 (픽셀)
+let viewHeight = 600;  // 뷰포트 높이 (픽셀)
+let cameraZoom = 1;    // 카메라 줌 레벨 (0.5 ~ 3.0)
+
+/**
+ * @section Z축 관리 레이어로 나눔
+ */
+let nextZIndex = 0;        // 다음 Z 인덱스
+const Z_OFFSET = 0.01;      // Z축 간격(각 메쉬마다 0.01씩 증가)
+
+/**
+ * @section 파티클 시스템 -> 원본의 1/40 이하로 커팅 되면 효과와 함께 삭제
+ */
+let particles = []; // 파티클 데이터 배열 [{ system, velocities, startTime, duration }]
+
+/**
+ * @section 디버그 모드
+ */
+let debugMode = false;              // 물리 충돌 영역 표시 여부 (기본: OFF)
+let debugLines = [];                // 물리 바디 시각화 라인들
+let lastDebugUpdate = 0;            // 마지막 디버그 업데이트 시간
+const DEBUG_UPDATE_INTERVAL = 100;  // 디버그 업데이트 간격 (ms) - 0.1초마다
+
+/**
+ * @section 물리 품질 설정
+ */
+let maxVertexCount = 80; // Matter.js 물리 바디 최대 정점 수 (기본: 80, 빠름)
+
+/**
+ * @section 화면 디버그 로그
+ */
+let debugLogEnabled = false;     // 디버그 로그 활성화 여부
+let debugLogPaused = false;      // 로그 일시정지 상태
+let debugLogDiv = null;          // 디버그 로그 컨테이너 DOM 요소
+let debugLogContent = null;      // 디버그 로그 내용 DOM 요소
+let debugLogMaxLines = 500;      // 최대 로그 라인 수
+
+// ==========================================
+// 초기화 함수
+// ==========================================
+
+/**
+ * 애플리케이션 초기화 함수
+ * Three.js 씬, 카메라, 렌더러, Matter.js 물리 엔진을 설정하고 시작합니다.
+ * 
+ * @function init
+ * @description
+ * - 캔버스 크기 계산
+ * - Three.js 씬 및 OrthographicCamera 생성
+ * - WebGL 렌더러 설정
+ * - 조명 및 배경 이미지 설정
+ * - Matter.js 물리 엔진 초기화
+ * - 경계 벽 생성
+ * - 이벤트 리스너 설정
+ * - 초기 도형 로드
+ * - 애니메이션 루프 시작
+ */
 function init() {
     // 디버그 로그 초기화
     debugLogDiv = document.getElementById('debugLog');
@@ -117,20 +180,23 @@ function init() {
     renderer.setSize(viewWidth, viewHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
-    // Raycaster (마우스 피킹용)
+    //Raycaster (마우스 피킹용)
     raycaster = new THREE.Raycaster();
     mouse = new THREE.Vector2();
 
-    // 조명 설정
+    //조명 설정
     setupLights();
 
-    // Matter.js World 설정
+    //배경 이미지 설정
+    //setupBackground();
+
+    //Matter.js World 설정
     setupPhysics();
 
-    // 캔버스 경계 벽 생성 (상하좌우)
+    //캔버스 경계 벽 생성 (상하좌우)
     createBoundaryWalls();
 
-    // 이벤트 리스너
+    //이벤트 리스너
     setupEventListeners();
 
     // 초기 도형 로드
@@ -143,7 +209,7 @@ function init() {
     const initTime = ((performance.now() - initStartTime) / 1000).toFixed(2);
     console.log(`✅ Three.js + Matter.js 2D 초기화 완료: ${initTime}초`);
 
-    // 로딩 인디케이터 페이드아웃
+    //로딩 인디케이터 페이드아웃
     setTimeout(() => {
         loadingDiv.style.transition = 'opacity 0.5s';
         loadingDiv.style.opacity = '0';
@@ -157,23 +223,97 @@ function init() {
 // 조명 설정
 // ==========================================
 
+/**
+ * Three.js 씬에 조명을 추가합니다.
+ * 
+ * @function setupLights
+ * @description
+ * - Ambient Light: 전체 환경 조명 (밝기: 0.4, 조명 효과가 잘 보이도록 낮춤)
+ * - Directional Light: 방향성 조명 (밝기: 1.0, 약간 위쪽에서 비춤)
+ */
 function setupLights() {
-    // Ambient Light (더 밝게: 0.7 → 0.9)
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
+    // Ambient Light: 전체 환경 조명 (너무 밝으면 조명 효과가 안 보임)
+    // 0.9 → 0.4로 낮춰서 DirectionalLight 효과가 잘 보이도록
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
     scene.add(ambientLight);
 
-    // Directional Light (더 밝게: 0.5 → 0.8)
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    dirLight.position.set(0, 0, 100); // 정면에서 비춤 (텍스처 명확하게)
+    // Directional Light: 방향성 조명 (그림자와 명암 효과)
+    // 0.8 → 1.0으로 높여서 조명 효과가 더 명확하게 보이도록
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+    dirLight.position.set(50, 50, 100); // 약간 위쪽에서 비춤 (조명 효과 명확)
     scene.add(dirLight);
 
-    console.log('💡 조명 설정 완료 (텍스처 표시 최적화)');
+    console.log('💡 조명 설정 완료 (Ambient: 0.4, Directional: 1.0)');
+}
+
+/**
+ * 배경 이미지를 설정합니다.
+ * 
+ * @function setupBackground
+ * @description
+ * - 카메라 시야 범위에 맞춰 배경 평면 생성
+ * - 'prefab/Sample.png' 이미지를 텍스처로 로드
+ * - 투명도 80%로 설정하여 도형이 잘 보이도록 함
+ * - Z축 -10 위치에 배치 (모든 객체보다 뒤에)
+ */
+//PNG 파일 써서 없어넣을거면 넣고 없어도 무방함
+function setupBackground() {
+    console.log('🖼️ 배경 이미지 설정 시작...');
+
+    // 1. 카메라의 시야(Frustum) 크기를 가져옵니다.
+    // init() 함수(약 160라인)에 정의된 값과 동일하게 맞춥니다.
+    const aspect = viewWidth / viewHeight;
+    const frustumSize = 400;
+    const worldWidth = frustumSize * aspect;
+    const worldHeight = frustumSize;
+
+    // 2. 텍스처 로드
+    const textureLoader = new THREE.TextureLoader();
+    const backgroundTexture = textureLoader.load(
+        'prefab/Sample.png', // @Sample.png 파일 경로
+        () => {
+            console.log('✅ 배경 텍스처 로드 완료');
+        },
+        undefined,
+        (err) => {
+            console.error('❌ 배경 텍스처 로드 실패:', err);
+        }
+    );
+
+    // 3. 평면 지오메트리 생성 (카메라 시야를 꽉 채우는 크기)
+    const bgGeometry = new THREE.PlaneGeometry(worldWidth, worldHeight);
+
+    // 4. 조명에 영향받지 않는 기본 재질 사용
+    const bgMaterial = new THREE.MeshBasicMaterial({
+        map: backgroundTexture,
+        transparent: true,
+        opacity: 0.8 // 배경이 너무 튀지 않게 80% 투명도
+    });
+
+    // 5. 메쉬 생성
+    const backgroundMesh = new THREE.Mesh(bgGeometry, bgMaterial);
+
+    // 6. ⭐ 핵심: Z축 깊이 설정
+    // nextZIndex는 0부터 시작해서 0.01, 0.02...로 *증가*합니다.
+    // 따라서 음수(-10)로 설정하면 항상 모든 객체보다 뒤에 있게 됩니다.
+    backgroundMesh.position.set(0, 0, -10);
+
+    scene.add(backgroundMesh);
 }
 
 // ==========================================
 // Matter.js 2D 물리 엔진 설정
 // ==========================================
 
+/**
+ * Matter.js 물리 엔진을 초기화하고 설정합니다.
+ * 
+ * @function setupPhysics
+ * @description
+ * - Matter.js Engine 생성
+ * - 중력 설정 (Y축 아래 방향, 양수)
+ * - 충돌 이벤트 리스너 등록 (디버그용)
+ */
 function setupPhysics() {
     console.log('⚙️ Matter.js 2D 물리 엔진 초기화...');
 
@@ -205,6 +345,16 @@ function setupPhysics() {
 // 캔버스 경계 벽 생성 (상하좌우)
 // ==========================================
 
+/**
+ * 캔버스 경계에 물리 벽을 생성합니다.
+ * 
+ * @function createBoundaryWalls
+ * @description
+ * - 상, 하, 좌, 우 4면에 정적(Static) 물리 바디 생성
+ * - Matter.js 좌표계 사용 (Y축 아래가 양수)
+ * - 바닥 벽은 시각적으로 약간 위로 올림 (시각 개선)
+ * - 그리드 헬퍼 추가 (바닥 참고용)
+ */
 function createBoundaryWalls() {
     console.log('🧱 캔버스 경계 벽 생성 시작...');
 
@@ -282,11 +432,11 @@ function createBoundaryWalls() {
         console.log(`  ✅ ${config.name} 벽 생성 (${config.width}x${config.height})${offsetInfo}`);
     });
 
-    console.log(`🧱 캔버스 경계 벽 생성 완료 (4면)`);
-    console.log(`📐 캔버스 범위: ${halfWidth * 2}x${halfHeight * 2}`);
-    console.log(`🎯 바닥 숨김: 시각적으로 ${bottomVisualOffset}px 위로 이동`);
+    console.log(`캔버스 경계 벽 생성 완료 (4면)`);
+    console.log(`캔버스 범위: ${halfWidth * 2}x${halfHeight * 2}`);
+    console.log(`바닥 숨김: 시각적으로 ${bottomVisualOffset}px 위로 이동`);
 
-    // 그리드 헬퍼 (바닥 참고용)
+    //그리드 헬퍼 (바닥 참고용)
     const gridHelper = new THREE.GridHelper(halfWidth * 2, 40, 0x4facfe, 0x444444);
     gridHelper.rotation.x = Math.PI / 2;
     gridHelper.position.y = -halfHeight + 5;
@@ -296,6 +446,12 @@ function createBoundaryWalls() {
 // ==========================================
 // 도형 생성 함수들
 // ==========================================
+// 
+// 이 섹션은 다양한 도형을 생성하는 함수들을 포함합니다:
+// - 기본 도형: 삼각형, 사각형, 오각형, 원
+// - SVG 기반: 나뭇잎 (SVG Path)
+// - OBJ 파일: 햄 (prefab/wholer-ham.obj)
+// - OBJ 파일은 3D에서 2D로 투영되어 Shape로 변환됩니다.
 
 function createLeafShape() {
     // SVG Path 데이터 (나뭇잎)
@@ -438,40 +594,6 @@ function createCircleShape() {
     return { shape, color: 0xF38181 };
 }
 
-// 사용자 OBJ 파일 로드
-function createCustomObjShape() {
-    return new Promise((resolve, reject) => {
-        if (!customObjData.objFile) {
-            reject('OBJ 파일이 선택되지 않았습니다');
-            return;
-        }
-        
-        const reader = new FileReader();
-        
-        reader.onload = (e) => {
-            const objContent = e.target.result;
-            const objLoader = new THREE.OBJLoader();
-            
-            console.log('📦 사용자 OBJ 파일 파싱 시작:', customObjData.objFile.name);
-            
-            try {
-                const object = objLoader.parse(objContent);
-                processObjToShape(object, customObjData.scale, customObjData.textureFile, resolve, reject);
-            } catch (error) {
-                console.error('❌ OBJ 파일 파싱 실패:', error);
-                reject(error);
-            }
-        };
-        
-        reader.onerror = (error) => {
-            console.error('❌ 파일 읽기 실패:', error);
-            reject(error);
-        };
-        
-        reader.readAsText(customObjData.objFile);
-    });
-}
-
 //햄 도형 생성 (OBJ 파일에서 로드)
 function createHamShape() {
     // 동기 방식 대신 Promise 반환
@@ -544,41 +666,58 @@ function processObjToShape(object, scale, textureFile, resolve, reject, defaultT
     
     console.log(`📏 BoundingBox 크기: X=${sizeX.toFixed(4)}, Y=${sizeY.toFixed(4)}, Z=${sizeZ.toFixed(4)}`);
     
-    // 가장 얇은 축 찾기 (이게 "두께" 축)
-    let thinAxis, axis1, axis2;
-    let getAxis1, getAxis2;
+    // 🎯 이미 2D인지 확인 (Z축이 거의 0이면 XY 평면에 있는 것)
+    const Z_THRESHOLD = 0.001; // Z축 두께 임계값
+    const isAlready2D = sizeZ < Z_THRESHOLD;
     
-    if (sizeX <= sizeY && sizeX <= sizeZ) {
-        // X축이 가장 얇음 → YZ 평면 사용
-        thinAxis = 'X';
-        axis1 = 'Y';
-        axis2 = 'Z';
-        getAxis1 = (i) => positionAttribute.getY(i);
-        getAxis2 = (i) => positionAttribute.getZ(i);
-    } else if (sizeY <= sizeX && sizeY <= sizeZ) {
-        // Y축이 가장 얇음 → XZ 평면 사용 (와플의 경우)
-        thinAxis = 'Y';
-        axis1 = 'X';
-        axis2 = 'Z';
-        getAxis1 = (i) => positionAttribute.getX(i);
-        getAxis2 = (i) => positionAttribute.getZ(i);
+    let vertices = [];
+    
+    if (isAlready2D) {
+        // 이미 2D (XY 평면) → 바로 X, Y 좌표만 사용
+        console.log(`✅ 이미 2D 형식 (Z축 두께: ${sizeZ.toFixed(6)}) → XY 좌표 직접 사용`);
+        for (let i = 0; i < positionAttribute.count; i++) {
+            vertices.push([
+                positionAttribute.getX(i),
+                positionAttribute.getY(i)
+            ]);
+        }
     } else {
-        // Z축이 가장 얇음 → XY 평면 사용
-        thinAxis = 'Z';
-        axis1 = 'X';
-        axis2 = 'Y';
-        getAxis1 = (i) => positionAttribute.getX(i);
-        getAxis2 = (i) => positionAttribute.getY(i);
-    }
-    
-    console.log(`🎯 2D 투영: ${thinAxis}축 무시, ${axis1}-${axis2} 평면 사용`);
-    
-    // 선택된 평면으로 2D 투영
-    const vertices = [];
-    for (let i = 0; i < positionAttribute.count; i++) {
-        const v1 = getAxis1(i);
-        const v2 = getAxis2(i);
-        vertices.push([v1, v2]);
+        // 3D → 2D 투영 필요
+        // 가장 얇은 축 찾기 (이게 "두께" 축)
+        let thinAxis, axis1, axis2;
+        let getAxis1, getAxis2;
+        
+        if (sizeX <= sizeY && sizeX <= sizeZ) {
+            // X축이 가장 얇음 → YZ 평면 사용
+            thinAxis = 'X';
+            axis1 = 'Y';
+            axis2 = 'Z';
+            getAxis1 = (i) => positionAttribute.getY(i);
+            getAxis2 = (i) => positionAttribute.getZ(i);
+        } else if (sizeY <= sizeX && sizeY <= sizeZ) {
+            // Y축이 가장 얇음 → XZ 평면 사용
+            thinAxis = 'Y';
+            axis1 = 'X';
+            axis2 = 'Z';
+            getAxis1 = (i) => positionAttribute.getX(i);
+            getAxis2 = (i) => positionAttribute.getZ(i);
+        } else {
+            // Z축이 가장 얇음 → XY 평면 사용
+            thinAxis = 'Z';
+            axis1 = 'X';
+            axis2 = 'Y';
+            getAxis1 = (i) => positionAttribute.getX(i);
+            getAxis2 = (i) => positionAttribute.getY(i);
+        }
+        
+        console.log(`🎯 3D → 2D 투영: ${thinAxis}축 무시, ${axis1}-${axis2} 평면 사용`);
+        
+        // 선택된 평면으로 2D 투영
+        for (let i = 0; i < positionAttribute.count; i++) {
+            const v1 = getAxis1(i);
+            const v2 = getAxis2(i);
+            vertices.push([v1, v2]);
+        }
     }
     
     // 중심 계산
@@ -643,10 +782,18 @@ function processObjToShape(object, scale, textureFile, resolve, reject, defaultT
 
 /**
  * Concave Hull (오목 껍질) 알고리즘 - 실제 외곽선 추출
- * 오목한 부분(홈)을 포함한 외곽선 생성
- * @param {Array} points - [[x, y], [x, y], ...] 형태의 정점 배열
- * @param {number} alpha - 민감도 (0.01~0.1, 작을수록 자세함)
- * @returns {Array} - 외곽선 정점들
+ * 
+ * @function computeConcaveHull
+ * @param {Array<Array<number>>} points - [[x, y], [x, y], ...] 형태의 정점 배열
+ * @param {number} [alpha=0.05] - 민감도 (0.01~0.1, 작을수록 자세함)
+ * @returns {Array<Array<number>>} - 외곽선 정점들
+ * 
+ * @description
+ * 오목한 부분(홈)을 포함한 외곽선을 생성합니다.
+ * - 중복 정점 제거
+ * - Boundary Detection으로 외곽 점만 추출
+ * - 외곽선 추적 알고리즘 (반시계 방향)
+ * - OBJ 파일의 실제 외곽선을 정확하게 추출하는데 사용됨
  */
 function computeConcaveHull(points, alpha = 0.05) {
     if (points.length < 3) return points;
@@ -860,6 +1007,9 @@ function computeConvexHull(points) {
 // ==========================================
 // 물리 속성 함수 (재사용 가능)
 // ==========================================
+// 
+// Matter.js 물리 바디의 속성을 설정하는 유틸리티 함수들입니다.
+// 마찰, 반발력, 밀도, 공기 저항 등을 제어할 수 있습니다.
 
 /**
  * Matter.js Body에 물리 속성을 설정
@@ -890,10 +1040,17 @@ function applyPhysicsProperties(body, options = {}) {
 
 /**
  * 실제 폴리곤 넓이 계산 (Shoelace Formula)
- * BoundingBox 넓이는 빈 공간을 포함하므로 부정확
- * Shoelace 공식으로 정확한 다각형 면적 계산
- * @param {Array} vertices - 정점 배열 [{x, y}, ...]
+ * 
+ * @function calculatePolygonArea
+ * @param {Array<Object>} vertices - 정점 배열 [{x, y}, ...]
  * @returns {number} 실제 면적 (px²)
+ * 
+ * @description
+ * BoundingBox 넓이는 빈 공간을 포함하므로 부정확합니다.
+ * Shoelace 공식(신발끈 공식)을 사용하여 정확한 다각형 면적을 계산합니다.
+ * 
+ * @formula
+ * Area = |Σ(x[i] * y[i+1] - x[i+1] * y[i])| / 2
  */
 function calculatePolygonArea(vertices) {
     if (!vertices || vertices.length < 3) {
@@ -924,9 +1081,17 @@ function calculatePolygonArea(vertices) {
 
 /**
  * 정점 간소화 (적응형 알고리즘)
- * @param {Array} vertices - 정점 배열
- * @param {number} maxPoints - 최대 정점 수
- * @returns {Array} 간소화된 정점 배열
+ * 
+ * @function simplifyVertices
+ * @param {Array<Object>} vertices - 정점 배열 [{x, y}, ...]
+ * @param {number} [maxPoints=200] - 최대 정점 수
+ * @returns {Array<Object>} 간소화된 정점 배열
+ * 
+ * @description
+ * - 정점이 8개 이하면 간소화하지 않음 (기본 도형 유지)
+ * - maxPoints 이하면 그대로 반환
+ * - 너무 많은 정점만 간소화 (복잡한 곡선 도형)
+ * - 균등 간격 샘플링 및 중복 제거
  */
 function simplifyVertices(vertices, maxPoints = 200) {
     // 정점이 적으면 간소화하지 않음
@@ -980,8 +1145,16 @@ function simplifyVertices(vertices, maxPoints = 200) {
 
 /**
  * 잘린 조각에 힘을 가해서 떨어뜨림 (확실한 분리)
- * @param {Matter.Body} body - Matter.js Body
- * @param {string} direction - 'left' 또는 'right'
+ * 
+ * @function applyCutForce
+ * @param {Matter.Body} body - Matter.js 물리 바디
+ * @param {string} [direction='left'] - 'left' 또는 'right'
+ * 
+ * @description
+ * 절단된 조각에 속도와 회전을 적용하여 자연스럽게 분리시킵니다.
+ * - 방향에 따른 수평 속도 (±2~4)
+ * - 위쪽으로 튀어오르는 수직 속도 (-3~-5)
+ * - 랜덤 회전 각속도 (±0.05)
  */
 function applyCutForce(body, direction = 'left') {
     // 방향에 따른 속도 (Matter.js: Y축 아래가 양수)
@@ -1006,6 +1179,27 @@ function applyCutForce(body, direction = 'left') {
 // 메쉬 생성 (Matter.js 2D 물리 바디 포함)
 // ==========================================
 
+/**
+ * Shape 데이터로부터 Three.js 메쉬와 Matter.js 물리 바디를 생성합니다.
+ * 
+ * @function createMeshFromShape
+ * @param {Object} shapeData - Shape 데이터 객체
+ * @param {THREE.Shape} shapeData.shape - Three.js Shape 객체
+ * @param {number} [shapeData.color] - 색상 (텍스처 없을 때 사용)
+ * @param {string} [shapeData.texture] - 텍스처 파일 경로
+ * @param {Object} [shapeData.uvBounds] - UV 좌표 범위 (OBJ 파일용)
+ * @param {Object} [position={ x: 0, y: 0 }] - 메쉬 초기 위치
+ * @param {Object} [physicsOptions={}] - 물리 속성 옵션
+ * @param {number} [rootArea=null] - 최초 원본 면적 (절단 체인 추적용)
+ * @returns {Object} 메쉬 데이터 객체 { threeMesh, matterBody, originalColor, ... }
+ * 
+ * @description
+ * - Three.js ShapeGeometry 생성 및 UV 좌표 설정
+ * - 텍스처가 있으면 텍스처 로드 및 적용
+ * - Matter.js 물리 바디 생성 (정점 간소화 적용)
+ * - 물리 바디에 패딩 적용 (작은 조각 바닥 통과 방지)
+ * - Z축 고유 좌표 부여 (겹침 방지)
+ */
 function createMeshFromShape(shapeData, position = { x: 0, y: 0 }, physicsOptions = {}, rootArea = null) {
     const { shape, color, texture, uvBounds } = shapeData;
 
@@ -1098,8 +1292,8 @@ function createMeshFromShape(shapeData, position = { x: 0, y: 0 }, physicsOption
         material = new THREE.MeshStandardMaterial({
             map: colorMap, // 텍스처 맵 적용
             side: THREE.DoubleSide,
-            roughness: 0.5, // 0.7 → 0.5 (더 밝게)
-            metalness: 0.0, // 0.1 → 0.0 (금속성 제거)
+            roughness: 0.3, // 0.5 → 0.3 (더 반짝임, 조명 효과 명확)
+            metalness: 0.0, // 금속성 없음
             wireframe: wireframeMode
         });
         
@@ -1109,7 +1303,7 @@ function createMeshFromShape(shapeData, position = { x: 0, y: 0 }, physicsOption
         material = new THREE.MeshStandardMaterial({
             color: color,
             side: THREE.DoubleSide,
-            roughness: 0.7,
+            roughness: 0.4, // 0.7 → 0.4 (조명 효과 명확)
             metalness: 0.1,
             wireframe: wireframeMode
         });
@@ -1275,6 +1469,11 @@ function createMeshFromShape(shapeData, position = { x: 0, y: 0 }, physicsOption
 // ==========================================
 // 이벤트 리스너
 // ==========================================
+// 
+// 사용자 입력 이벤트를 처리합니다:
+// - 마우스: 절단선 그리기, 카메라 팬
+// - 휠: 줌 인/아웃
+// - UI: 도형 선택, 설정 변경
 
 function setupEventListeners() {
     // 마우스 다운 (캔버스에서만)
@@ -1286,36 +1485,6 @@ function setupEventListeners() {
 
     // 윈도우 리사이즈
     window.addEventListener('resize', onWindowResize);
-
-    // 도형 선택
-    const shapeSelect = document.getElementById('shapeSelect');
-    shapeSelect.addEventListener('change', () => {
-        // "사용자 OBJ 파일" 선택 시 업로드 섹션 표시
-        const customSection = document.getElementById('customObjSection');
-        if (shapeSelect.value === 'custom') {
-            customSection.style.display = 'block';
-        } else {
-            customSection.style.display = 'none';
-        }
-    });
-    
-    // OBJ 파일 선택
-    document.getElementById('objFile').addEventListener('change', (e) => {
-        customObjData.objFile = e.target.files[0];
-        console.log('📁 OBJ 파일 선택:', customObjData.objFile?.name);
-    });
-    
-    // 텍스처 파일 선택
-    document.getElementById('textureFile').addEventListener('change', (e) => {
-        customObjData.textureFile = e.target.files[0];
-        console.log('🎨 텍스처 파일 선택:', customObjData.textureFile?.name);
-    });
-    
-    // 크기 조절 슬라이더
-    document.getElementById('objScale').addEventListener('input', (e) => {
-        customObjData.scale = parseInt(e.target.value);
-        document.getElementById('scaleValue').textContent = customObjData.scale;
-    });
 
     // 줌 (휠)
     canvas.addEventListener('wheel', onWheel, { passive: false });
@@ -1582,6 +1751,18 @@ function updateBoundaryWalls() {
 // 메쉬 절단 로직 (2D)
 // ==========================================
 
+/**
+ * 절단선을 따라 메쉬를 절단합니다.
+ * 
+ * @function performCut
+ * @param {THREE.Vector3} start - 절단선 시작점
+ * @param {THREE.Vector3} end - 절단선 끝점
+ * 
+ * @description
+ * - 절단선과 교차하는 모든 메쉬를 찾아 분할
+ * - 각 메쉬에 대해 splitMeshSimple2D 호출
+ * - 절단 후 통계 업데이트
+ */
 function performCut(start, end) {
     console.log('🔪 2D 절단 시작 (Matter.js):', { start, end });
 
@@ -1637,6 +1818,23 @@ function performCut(start, end) {
     updateStats();
 }
 
+/**
+ * 2D 메쉬를 절단선을 기준으로 두 개의 조각으로 분할합니다.
+ * 
+ * @function splitMeshSimple2D
+ * @param {Object} meshData - 메쉬 데이터 객체
+ * @param {THREE.Vector2} normal - 절단선 법선 벡터
+ * @param {THREE.Vector3} start - 절단선 시작점
+ * @param {THREE.Vector3} end - 절단선 끝점
+ * 
+ * @description
+ * - 정점을 절단선 기준으로 양수/음수 그룹으로 분류
+ * - 교차점 계산 및 삽입
+ * - 각 조각의 면적 계산 (Shoelace Formula)
+ * - 작은 조각은 파티클 효과로 변환
+ * - 큰 조각은 새로운 메쉬로 생성
+ * - 절단 힘 적용 (분리 효과)
+ */
 function splitMeshSimple2D(meshData, normal, start, end) {
     const { threeMesh, originalColor } = meshData;
     const geometry = threeMesh.geometry;
@@ -1954,9 +2152,16 @@ function getRandomColor() {
 
 /**
  * 조각이 너무 작은지 확인 (원본 크기와 비교)
- * @param {Array} vertices - 정점 배열
- * @param {number} minAreaThreshold - 최소 면적 (원본의 1/40)
- * @returns {boolean}
+ * 
+ * @function isFragmentTooSmall
+ * @param {Array<Object>} vertices - 정점 배열 [{x, y}, ...]
+ * @param {number} [minAreaThreshold=50] - 최소 면적 (원본의 1/40)
+ * @returns {boolean} - 너무 작으면 true, 아니면 false
+ * 
+ * @description
+ * - Shoelace Formula로 실제 넓이 계산
+ * - 원본의 1/40 이하면 파티클로 변환
+ * - 정점 밀도 체크 (보조 기준)
  */
 function isFragmentTooSmall(vertices, minAreaThreshold = 50) {
     if (vertices.length < 2) return true;
@@ -1995,9 +2200,18 @@ function isFragmentTooSmall(vertices, minAreaThreshold = 50) {
 
 /**
  * 파티클 효과 생성
- * @param {Array} vertices - 정점 배열
- * @param {number} color - 색상
+ * 
+ * @function createParticleEffect
+ * @param {Array<Object>} vertices - 정점 배열 [{x, y}, ...]
+ * @param {number} color - 색상 (hex)
  * @param {THREE.Vector3} basePosition - 기준 위치
+ * 
+ * @description
+ * 작은 조각을 파티클 효과로 변환합니다.
+ * - 정점을 파티클로 변환 + 추가 파티클 생성 (최대 30개)
+ * - 사방으로 흩어지는 속도 적용
+ * - 중력 적용 (Matter.js와 동일)
+ * - 1.2초 동안 페이드 아웃
  */
 function createParticleEffect(vertices, color, basePosition) {
     // 가루 효과: 더 많은 파티클 (15 → 30개)
@@ -2098,6 +2312,11 @@ function updateParticles() {
 // ==========================================
 // 디버그 시각화 함수들
 // ==========================================
+// 
+// 개발 및 디버깅을 위한 시각화 도구들입니다:
+// - 물리 바디 시각화 (빨강=벽, 초록=도형)
+// - 화면 디버그 로그 (콘솔 로그를 화면에 표시)
+// - 일시정지/재개 기능
 
 /**
  * Matter.js 물리 바디를 Three.js로 시각화
@@ -2299,6 +2518,11 @@ function toggleDebugMode() {
 // ==========================================
 // UI 함수들
 // ==========================================
+// 
+// 사용자 인터페이스와 상호작용하는 함수들입니다:
+// - 도형 로드 및 리셋
+// - 설정 변경 (와이어프레임, 물리 품질 등)
+// - 통계 업데이트
 
 async function loadSelectedShape() {
     const select = document.getElementById('shapeSelect');
@@ -2306,29 +2530,8 @@ async function loadSelectedShape() {
 
     let shapeData;
     
-    // 사용자 OBJ 파일 로딩
-    if (shapeType === 'custom') {
-        if (!customObjData.objFile) {
-            infoDiv.textContent = '❌ OBJ 파일을 먼저 선택해주세요!';
-            infoDiv.style.background = '#ffcccc';
-            return;
-        }
-        
-        infoDiv.textContent = '📦 사용자 OBJ 파일 로딩 중... 잠시만 기다려주세요.';
-        infoDiv.style.background = '#fff3bf';
-        
-        try {
-            shapeData = await createCustomObjShape();
-            console.log('✅ 사용자 OBJ 도형 로드 완료!');
-        } catch (error) {
-            console.error('❌ 사용자 OBJ 로드 실패:', error);
-            infoDiv.textContent = `❌ OBJ 파일 로드 실패: ${error}`;
-            infoDiv.style.background = '#ffcccc';
-            return;
-        }
-    }
     // 햄 도형은 비동기 로딩 필요 (OBJ 파일)
-    else if (shapeType === 'ham') {
+    if (shapeType === 'ham') {
         infoDiv.textContent = '📦 OBJ 파일 로딩 중... 잠시만 기다려주세요.';
         infoDiv.style.background = '#fff3bf';
         
@@ -2495,6 +2698,18 @@ function updateStats() {
 // 애니메이션 루프 (Matter.js 2D 물리 업데이트)
 // ==========================================
 
+/**
+ * 메인 애니메이션 루프 함수
+ * 
+ * @function animate
+ * @description
+ * - FPS 계산 및 표시
+ * - Matter.js 물리 엔진 업데이트 (60fps)
+ * - Three.js 메쉬 위치를 Matter.js 바디와 동기화
+ * - 파티클 시스템 업데이트
+ * - 디버그 모드 시 물리 바디 시각화
+ * - 씬 렌더링
+ */
 function animate() {
     requestAnimationFrame(animate);
 

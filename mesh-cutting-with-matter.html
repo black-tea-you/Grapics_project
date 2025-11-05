@@ -351,6 +351,18 @@
             </select>
         </div>
 
+        <div class="shape-selector" style="margin-top: 10px;">
+            <label for="speedSlider">시뮬레이션 속도:</label>
+            <input type="range" id="speedSlider" min="0.2" max="1.5" step="0.05" value="1.0" onchange="updateSimulationSpeed()" oninput="updateSimulationSpeed(true)" style="vertical-align: middle; width: 60%;">
+            <span id="speedValue" style="margin-left: 10px; font-weight: 700;">1.00x</span>
+        </div>
+
+        <div class="shape-selector" style="margin-top: 6px;">
+            <label for="cutForceSlider">절단 분리 속도(힘):</label>
+            <input type="range" id="cutForceSlider" min="0.2" max="3.0" step="0.1" value="1.0" onchange="updateCutForceScale()" oninput="updateCutForceScale(true)" style="vertical-align: middle; width: 60%;">
+            <span id="cutForceValue" style="margin-left: 10px; font-weight: 700;">1.0x</span>
+        </div>
+
         <div class="canvas-container">
             <canvas id="canvas"></canvas>
             <div id="loading" class="loading">
@@ -413,6 +425,8 @@
     
     <!-- OBJLoader (CDN) -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js" onerror="console.error('OBJLoader 로드 실패:', this.src)"></script>
+    <!-- RGBELoader (HDRI 로더) -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/RGBELoader.js" onerror="console.error('RGBELoader 로드 실패:', this.src)"></script>
     
     <!-- Matter.js 물리 엔진 (CDN) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js" onerror="console.error('Matter.js 로드 실패:', this.src)"></script>

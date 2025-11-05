@@ -172,8 +172,6 @@ mesh-cutting-with-matter.js
 ```
 
 ## 버전 정보
-
-- **버전**: 2.0
 - **제작**: Graphics Project
-- **최종 업데이트**: 2024
+- **최종 업데이트**: 2025
 

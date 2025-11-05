@@ -111,6 +111,12 @@ const DEBUG_UPDATE_INTERVAL = 100;  // 디버그 업데이트 간격 (ms) - 0.1�
 let maxVertexCount = 80; // Matter.js 물리 바디 최대 정점 수 (기본: 80, 빠름)
 
 /**
+ * @section 시뮬레이션 속도 제어
+ */
+let simulationSpeed = 1.0; // Engine timing.timeScale 과 연결 (0.2 ~ 1.5 권장)
+let cutForceScale = 1.0;   // 절단 직후 부여되는 속도/각속도 배율 (0.2 ~ 3.0)
+
+/**
  * @section 화면 디버그 로그
  */
 let debugLogEnabled = false;     // 디버그 로그 활성화 여부
@@ -179,6 +185,12 @@ function init() {
 
     renderer.setSize(viewWidth, viewHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // PBR용 톤매핑/색공간 설정
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+    // 물리기반 광원 강도 모델 활성화 (조명 감쇠/강도 물리적으로 동작)
+    renderer.physicallyCorrectLights = true;
 
     //Raycaster (마우스 피킹용)
     raycaster = new THREE.Raycaster();
@@ -187,11 +199,34 @@ function init() {
     //조명 설정
     setupLights();
 
+    // HDRI 환경맵 로드 (PBR 반사 환경)
+    try {
+        const pmrem = new THREE.PMREMGenerator(renderer);
+        pmrem.compileEquirectangularShader();
+        if (THREE.RGBELoader) {
+            const rgbeLoader = new THREE.RGBELoader();
+            //rgbeLoader.setDataType(THREE.UnsignedByteType);
+            // 🚨 [수정!] HDR의 전체 밝기 범위를 사용하기 위해 Float 타입으로 변경합니다.
+            rgbeLoader.setDataType(THREE.FloatType); // 또는 THREE.HalfFloatType
+            rgbeLoader.load('prefab/studio.hdr', (hdr) => {
+                const envTex = pmrem.fromEquirectangular(hdr).texture;
+                scene.environment = envTex;
+                hdr.dispose();
+            });
+        }
+    } catch (e) {
+        console.warn('HDRI 환경맵 로드 실패(무시 가능):', e.message);
+    }
+
     //배경 이미지 설정
     //setupBackground();
 
     //Matter.js World 설정
     setupPhysics();
+    // 초기 시뮬레이션 속도 적용 (HTML 슬라이더 값 반영)
+    try { updateSimulationSpeed(true); } catch (e) {}
+    // 초기 절단 힘 배율 적용 (HTML 슬라이더 값 반영)
+    try { updateCutForceScale(true); } catch (e) {}
 
     //캔버스 경계 벽 생성 (상하좌우)
     createBoundaryWalls();
@@ -234,14 +269,38 @@ function init() {
 function setupLights() {
     // Ambient Light: 전체 환경 조명 (너무 밝으면 조명 효과가 안 보임)
     // 0.9 → 0.4로 낮춰서 DirectionalLight 효과가 잘 보이도록
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.15);
     scene.add(ambientLight);
 
     // Directional Light: 방향성 조명 (그림자와 명암 효과)
     // 0.8 → 1.0으로 높여서 조명 효과가 더 명확하게 보이도록
     const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
-    dirLight.position.set(50, 50, 100); // 약간 위쪽에서 비춤 (조명 효과 명확)
+    // 🔽 [수정!] 빛이 Z축 위에서 아래로 떨어지도록 설정
+    dirLight.position.set(50, 50, 100); // 빛이 Z=100 (위)에서 옴
+    dirLight.target.position.set(0, 0, 0); // Z=0 (바닥)을 향함
     scene.add(dirLight);
+    scene.add(dirLight.target); // target도 씬에 추가해야 적용됩니다.
+
+    // 🔽 [수정!] DirectionalLight 헬퍼 (빨간색)
+    const dirLightHelper = new THREE.DirectionalLightHelper(dirLight, 10, 0xff0000);
+    scene.add(dirLightHelper);
+
+    // 보조: 캔버스 정규좌표 (1, 0.8)에 포인트 라이트 배치
+    try {
+        const aspect = viewWidth / viewHeight;
+        const frustumSize = 400 / cameraZoom;
+        const worldWidth = frustumSize * aspect;
+        const worldHeight = frustumSize;
+        const x = (1.0 - 0.5) * worldWidth;
+        const y = (0.5 - 0.8) * worldHeight;
+        const pLight = new THREE.PointLight(0xffffff, 1.2, 900, 2.0);
+        pLight.position.set(x, y, 60);
+        scene.add(pLight);
+        // 확인용 헬퍼 필요 시 아래 주석 해제
+        // scene.add(new THREE.PointLightHelper(pLight, 5));
+    } catch (e) {
+        console.warn('PointLight 배치 실패(무시 가능):', e.message);
+    }
 
     console.log('💡 조명 설정 완료 (Ambient: 0.4, Directional: 1.0)');
 }
@@ -339,6 +398,50 @@ function setupPhysics() {
     });
 
     console.log('✅ Matter.js 2D 물리 엔진 초기화 완료 (중력: Y=+1)');
+}
+
+// ==========================================
+// 시뮬레이션 속도 제어 (HTML 슬라이더 연동)
+// ==========================================
+
+function updateSimulationSpeed(isLive = false) {
+    try {
+        const slider = document.getElementById('speedSlider');
+        if (!slider) return;
+        const valueSpan = document.getElementById('speedValue');
+        const val = parseFloat(slider.value);
+        simulationSpeed = (isFinite(val) && val > 0) ? val : 1.0;
+        if (engine && engine.timing) {
+            engine.timing.timeScale = simulationSpeed;
+        }
+        if (valueSpan) {
+            valueSpan.textContent = simulationSpeed.toFixed(2) + 'x';
+        }
+        if (!isLive) {
+            console.log(`⏱️ 시뮬레이션 속도: x${simulationSpeed.toFixed(2)}`);
+        }
+    } catch (e) {
+        console.warn('속도 슬라이더 업데이트 실패:', e.message);
+    }
+}
+
+// 절단 분리 속도(힘) 배율 업데이트 (HTML 슬라이더 연동)
+function updateCutForceScale(isLive = false) {
+    try {
+        const slider = document.getElementById('cutForceSlider');
+        if (!slider) return;
+        const valueSpan = document.getElementById('cutForceValue');
+        const val = parseFloat(slider.value);
+        cutForceScale = (isFinite(val) && val > 0) ? val : 1.0;
+        if (valueSpan) {
+            valueSpan.textContent = cutForceScale.toFixed(1) + 'x';
+        }
+        if (!isLive) {
+            console.log(`💨 절단 분리 속도 배율: x${cutForceScale.toFixed(1)}`);
+        }
+    } catch (e) {
+        console.warn('절단 속도 슬라이더 업데이트 실패:', e.message);
+    }
 }
 
 // ==========================================
@@ -1159,8 +1262,12 @@ function simplifyVertices(vertices, maxPoints = 200) {
 function applyCutForce(body, direction = 'left') {
     // 방향에 따른 속도 (Matter.js: Y축 아래가 양수)
     // ✅ 속도를 절반으로 줄여서 물리 효과가 더 자연스럽게 따라가도록 함
-    const xVelocity = direction === 'left' ? -2 - Math.random() * 2 : 2 + Math.random() * 2; // ±2~4 (기존: ±5~8)
-    const yVelocity = -3 - Math.random() * 2; // -3~-5 (기존: -8~-12) 위로 튀어오름 (Y축 음수)
+    let xVelocity = direction === 'left' ? -2 - Math.random() * 2 : 2 + Math.random() * 2; // ±2~4 (기존: ±5~8)
+    let yVelocity = -3 - Math.random() * 2; // -3~-5 (기존: -8~-12) 위로 튀어오름 (Y축 음수)
+
+    // 절단 분리 속도 배율 적용
+    xVelocity *= cutForceScale;
+    yVelocity *= cutForceScale;
 
     // 속도 직접 설정 (더 확실함)
     Matter.Body.setVelocity(body, {
@@ -1169,10 +1276,11 @@ function applyCutForce(body, direction = 'left') {
     });
 
     // 회전 추가 (더 자연스러운 효과)
-    const angularVelocity = (Math.random() - 0.5) * 0.1; // ±0.05 (기존: ±0.1)
+    let angularVelocity = (Math.random() - 0.5) * 0.1; // ±0.05 (기존: ±0.1)
+    angularVelocity *= Math.max(0.5, Math.min(2.0, cutForceScale)); // 각속도는 과도하지 않게 클램프
     Matter.Body.setAngularVelocity(body, angularVelocity);
 
-    console.log(`✂️ 절단 힘 적용 (${direction}): vx=${xVelocity.toFixed(2)}, vy=${yVelocity.toFixed(2)}`);
+    console.log(`✂️ 절단 힘 적용 (${direction}) x${cutForceScale.toFixed(1)}: vx=${xVelocity.toFixed(2)}, vy=${yVelocity.toFixed(2)}, av=${angularVelocity.toFixed(3)}`);
 }
 
 // ==========================================
@@ -1245,8 +1353,9 @@ function createMeshFromShape(shapeData, position = { x: 0, y: 0 }, physicsOption
                 const x = positionAttribute.getX(i);
                 const y = positionAttribute.getY(i);
                 
-                uvArray[i * 2] = (x - bbox.min.x) / width;       // U
-                uvArray[i * 2 + 1] = (y - bbox.min.y) / height;  // V
+                // ✅ [수정!] x와 y를 사용하여 0.0 ~ 1.0 범위의 UV를 생성
+                uvArray[i * 2] = (x - bbox.min.x) / width;
+                uvArray[i * 2 + 1] = (y - bbox.min.y) / height;
             }
             
             console.log(`✅ UV 좌표 기본 방식으로 설정 완료: ${positionAttribute.count}개`);
@@ -1255,56 +1364,69 @@ function createMeshFromShape(shapeData, position = { x: 0, y: 0 }, physicsOption
         geometry.setAttribute('uv', new THREE.BufferAttribute(uvArray, 2));
     }
 
+    // AO 맵 대응: uv2가 없으면 uv를 복사
+    if (geometry.attributes.uv && !geometry.attributes.uv2) {
+        geometry.setAttribute('uv2', geometry.attributes.uv);
+    }
+
+    // 이 코드가 없으면 PBR 노멀 맵이 작동하지 않습니다.
+    geometry.computeTangents()
+
     // Three.js Material 생성
     let material;
     
     if (texture) {
-        // 텍스처가 있는 경우: 텍스처 로드
+        // 텍스처가 있는 경우: 텍스처 + PBR 맵들
         const textureLoader = new THREE.TextureLoader();
-        
+
         console.log(`🎨 텍스처 로딩 시작: ${texture}`);
-        
+
         const colorMap = textureLoader.load(
             texture,
             (loadedTexture) => {
                 console.log(`✅ 텍스처 로드 성공: ${texture}`);
                 console.log(`   크기: ${loadedTexture.image.width}x${loadedTexture.image.height}`);
-                loadedTexture.wrapS = THREE.ClampToEdgeWrapping; // RepeatWrapping → ClampToEdge
+                loadedTexture.wrapS = THREE.ClampToEdgeWrapping;
                 loadedTexture.wrapT = THREE.ClampToEdgeWrapping;
+                loadedTexture.encoding = THREE.sRGBEncoding;
                 loadedTexture.needsUpdate = true;
-                
-                // 텍스처 로드 후 렌더링 강제 업데이트
-                if (material) {
-                    material.needsUpdate = true;
-                }
+                if (material) material.needsUpdate = true;
             },
-            (progress) => {
-                if (progress.lengthComputable) {
-                    console.log(`📥 텍스처 로딩: ${(progress.loaded / progress.total * 100).toFixed(0)}%`);
-                }
-            },
+            undefined,
             (error) => {
                 console.error(`❌ 텍스처 로드 실패: ${texture}`, error);
-                console.error(`   경로를 확인하세요. 현재 위치: ${window.location.href}`);
             }
         );
-        
-        material = new THREE.MeshStandardMaterial({
-            map: colorMap, // 텍스처 맵 적용
+
+        // 선택: 프로젝트 경로에 맞춰 존재하는 경우에만 사용
+        //const metalnessMap = textureLoader.load('Textures/metal.png', undefined, undefined, () => {});
+        const metalnessMap=null;
+        const roughnessMap = textureLoader.load('Textures/rough.png', undefined, undefined, () => {});
+        const normalMap    = textureLoader.load('Textures/normal.png', undefined, undefined, () => {});
+
+        material = new THREE.MeshPhysicalMaterial({
+            map: colorMap,
+            metalness: 0.0, // ✅ [수정!] 기본 금속성 0.0
+            roughness: 0.2, // ✅ [수정!] 기본 거칠기 1.0
+            metalnessMap,
+            roughnessMap,
+            normalMap,
+            envMapIntensity: 1.2,
+            clearcoat: 0.4,
+            clearcoatRoughness: 0.2,
             side: THREE.DoubleSide,
-            roughness: 0.3, // 0.5 → 0.3 (더 반짝임, 조명 효과 명확)
-            metalness: 0.0, // 금속성 없음
             wireframe: wireframeMode
         });
-        
-        console.log(`🎨 텍스처 재질 생성 완료`);
+
+        console.log(`🎨 텍스처 PBR 재질 생성 완료`);
     } else {
-        // 텍스처가 없는 경우: 단색
-        material = new THREE.MeshStandardMaterial({
+        // 텍스처가 없는 경우: 단색 + 기본 PBR
+        material = new THREE.MeshPhysicalMaterial({
             color: color,
+            metalness: 0.0, // ✅ [수정!] 0.0 (금속 아님)
+            roughness: 0.8, // ✅ [수정!] 0.8 (조금 더 거칠게)
+            envMapIntensity: 0.5, // ✅ [수정!] 0.5 (환경 반사 줄임)
             side: THREE.DoubleSide,
-            roughness: 0.4, // 0.7 → 0.4 (조명 효과 명확)
-            metalness: 0.1,
             wireframe: wireframeMode
         });
     }
@@ -1767,8 +1889,11 @@ function performCut(start, end) {
     console.log('🔪 2D 절단 시작 (Matter.js):', { start, end });
 
     // 절단 평면 생성 (2D)
-    const direction = new THREE.Vector2(end.x - start.x, end.y - start.y).normalize();
+    const cutVec = new THREE.Vector2(end.x - start.x, end.y - start.y);
+    const cutLen = Math.max(0.0001, cutVec.length());
+    const direction = cutVec.clone().normalize();
     const normal = new THREE.Vector2(-direction.y, direction.x);
+    const segmentMargin = 2.0; // 절단선 양 끝 여유(픽셀)
 
     const meshesToCut = [...meshes];
 
@@ -1782,15 +1907,18 @@ function performCut(start, end) {
         let hasPositive = false;
         let hasNegative = false;
 
-        for (let i = 0; i < positionAttribute.count; i++) {
-            const vertex = new THREE.Vector2(
-                positionAttribute.getX(i),
-                positionAttribute.getY(i)
-            );
+        // 월드 변환 행렬 (회전/스케일 포함)
+        const worldMatrix = threeMesh.matrixWorld;
 
-            // 월드 좌표로 변환 (Three.js 좌표계)
-            vertex.x += threeMesh.position.x;
-            vertex.y += threeMesh.position.y;
+        for (let i = 0; i < positionAttribute.count; i++) {
+            // 로컬 정점 → 월드 정점 (회전/스케일 반영)
+            const localV = new THREE.Vector3(
+                positionAttribute.getX(i),
+                positionAttribute.getY(i),
+                0
+            );
+            const worldV = localV.clone().applyMatrix4(worldMatrix);
+            const vertex = new THREE.Vector2(worldV.x, worldV.y);
 
             // 점과 선의 거리 계산 (2D)
             const toPoint = new THREE.Vector2(vertex.x - start.x, vertex.y - start.y);
@@ -1800,8 +1928,33 @@ function performCut(start, end) {
             if (distance < -0.1) hasNegative = true;
         }
 
-        // 양쪽에 정점이 있으면 절단 가능
+        // 선분 범위 내 교차가 존재하는지 추가 확인 (무한직선 절단 방지)
+        let hasSegmentIntersection = false;
         if (hasPositive && hasNegative) {
+            const posAttr = geometry.attributes.position;
+            const worldM = threeMesh.matrixWorld;
+            for (let i = 0; i < posAttr.count; i++) {
+                const j = (i + 1) % posAttr.count;
+                const a = new THREE.Vector3(posAttr.getX(i), posAttr.getY(i), 0).applyMatrix4(worldM);
+                const b = new THREE.Vector3(posAttr.getX(j), posAttr.getY(j), 0).applyMatrix4(worldM);
+                const a2 = new THREE.Vector2(a.x, a.y);
+                const b2 = new THREE.Vector2(b.x, b.y);
+                const d1 = new THREE.Vector2(a2.x - start.x, a2.y - start.y).dot(normal);
+                const d2 = new THREE.Vector2(b2.x - start.x, b2.y - start.y).dot(normal);
+                if ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) {
+                    const t = Math.abs(d1) / (Math.abs(d1) + Math.abs(d2));
+                    const p = new THREE.Vector2().lerpVectors(a2, b2, t);
+                    const u = new THREE.Vector2(p.x - start.x, p.y - start.y).dot(direction) / cutLen;
+                    if (u >= -segmentMargin / cutLen && u <= 1 + segmentMargin / cutLen) {
+                        hasSegmentIntersection = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // 양쪽 부호 + 선분 교차가 있을 때만 절단 수행
+        if (hasPositive && hasNegative && hasSegmentIntersection) {
             console.log('✅ 2D 메쉬 절단 가능 (Matter.js Body 제거 후 재생성)');
 
             // 기존 메쉬 제거
@@ -1852,6 +2005,13 @@ function splitMeshSimple2D(meshData, normal, start, end) {
     console.log(`   원본 정점 수: ${positionAttribute.count}개`);
 
     // 각 선분을 순회하면서 정점과 교차점을 순서대로 처리
+    const worldMatrix = threeMesh.matrixWorld;
+    const inverseWorldMatrix = new THREE.Matrix4().copy(worldMatrix).invert();
+    const cutVec = new THREE.Vector2(end.x - start.x, end.y - start.y);
+    const cutLen = Math.max(0.0001, cutVec.length());
+    const cutDir = cutVec.clone().normalize();
+    const segmentMargin = 2.0; // 절단선 양 끝 여유(픽셀)
+
     for (let i = 0; i < positionAttribute.count; i++) {
         const nextIndex = (i + 1) % positionAttribute.count;
 
@@ -1867,15 +2027,11 @@ function splitMeshSimple2D(meshData, normal, start, end) {
             positionAttribute.getY(nextIndex)
         );
 
-        // 월드 좌표로 변환
-        const v1World = new THREE.Vector2(
-            v1Local.x + threeMesh.position.x,
-            v1Local.y + threeMesh.position.y
-        );
-        const v2World = new THREE.Vector2(
-            v2Local.x + threeMesh.position.x,
-            v2Local.y + threeMesh.position.y
-        );
+        // 월드 좌표로 변환 (회전/스케일 반영)
+        const v1World3 = new THREE.Vector3(v1Local.x, v1Local.y, 0).applyMatrix4(worldMatrix);
+        const v2World3 = new THREE.Vector3(v2Local.x, v2Local.y, 0).applyMatrix4(worldMatrix);
+        const v1World = new THREE.Vector2(v1World3.x, v1World3.y);
+        const v2World = new THREE.Vector2(v2World3.x, v2World3.y);
 
         // 현재 정점의 distance 계산
         const toV1 = new THREE.Vector2(v1World.x - start.x, v1World.y - start.y);
@@ -1901,11 +2057,17 @@ function splitMeshSimple2D(meshData, normal, start, end) {
             const t = Math.abs(d1) / (Math.abs(d1) + Math.abs(d2));
             const intersectionWorld = new THREE.Vector2().lerpVectors(v1World, v2World, t);
 
-            // 로컬 좌표로 변환
-            const intersectionLocal = new THREE.Vector2(
-                intersectionWorld.x - threeMesh.position.x,
-                intersectionWorld.y - threeMesh.position.y
-            );
+            // 절단선 선분 범위 체크(u in [0,1] with margin)
+            const rel = new THREE.Vector2(intersectionWorld.x - start.x, intersectionWorld.y - start.y);
+            const u = rel.dot(cutDir) / cutLen;
+            if (u < -segmentMargin / cutLen || u > 1 + segmentMargin / cutLen) {
+                continue; // 선분 밖 교차는 무시 (무한 직선 절단 방지)
+            }
+
+            // 로컬 좌표로 변환 (역행렬 사용)
+            const intersectionWorld3 = new THREE.Vector3(intersectionWorld.x, intersectionWorld.y, 0);
+            const intersectionLocal3 = intersectionWorld3.clone().applyMatrix4(inverseWorldMatrix);
+            const intersectionLocal = new THREE.Vector2(intersectionLocal3.x, intersectionLocal3.y);
 
             // ✅ 교차점을 양쪽 그룹에 바로 추가 (올바른 순서!)
             posVertices.push(intersectionLocal);
